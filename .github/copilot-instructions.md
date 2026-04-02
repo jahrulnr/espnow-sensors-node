@@ -21,8 +21,10 @@ Read these first:
 2. `docs/architecture.md`
 3. `docs/configuration.md`
 4. `docs/api-contract.md`
-5. `docs/build-and-verify.md`
-6. `docs/add-sensor-module.md` (only when adding sensor types)
+5. `docs/websocket-contract.md`
+6. `docs/build-and-verify.md`
+7. `docs/add-websocket-hook.md` (when adding websocket hooks/types)
+8. `docs/add-sensor-module.md` (only when adding sensor types)
 
 ## 3) Source Index (Where To Edit What)
 
@@ -44,11 +46,14 @@ Read these first:
 - Input pipeline: `src/app/tasks/inputTask.cpp`
 - Network pipeline: `src/app/tasks/networkTask.cpp`
 - WiFi command-driven client: `src/app/network/wifi_manager.h/.cpp`
+- WebSocket gateway transport/router: `src/app/network/websocket_gateway.h/.cpp`
+- WebSocket modular hooks: `src/app/network/hooks/*.h/.cpp`
 
 ### Config and profile selection
 - Global policy: `include/app_config.h`
 - Profile selector: `include/board_profile.h`
 - Board profiles: `include/profiles/profile_*.h`
+- Local user override profile: `include/profiles/profile_user.h` (gitignored)
 - Pin mapping bridge: `include/hw.h`
 - Build env matrix: `platformio.ini`
 
@@ -56,6 +61,8 @@ Read these first:
 
 - `networkTask` must not read sensor drivers directly.
 - Sensor driver usage belongs in sensing modules only.
+- `websocket_gateway` must remain transport/router only; feature logic belongs in hook modules.
+- Keep ESP-NOW and WebSocket contracts in separate docs/files.
 - Payload format changes must update:
   - `state_binary.h`
   - `contract_checks.cpp`
@@ -71,6 +78,7 @@ Read these first:
   - master sends `COMMAND` with `Type::WifiCredentials`.
 - If no credentials command arrives: skip WiFi connect.
 - Hostname is local config (`WIFI_CLIENT_HOSTNAME`) and exposed via mDNS as `<hostname>.local`.
+- WebSocket gateway starts only after WiFi is connected.
 
 If you touch WiFi behavior, verify docs and contract remain accurate.
 
@@ -94,6 +102,12 @@ For WiFi codepath validation:
 pio run -e esp32-c3-super-mini-wifi
 ```
 
+For ESP32-CAM + websocket path validation:
+
+```bash
+pio run -e esp32-cam-ai-thinker
+```
+
 No unit-test suite is provided; build success + contract consistency is mandatory.
 
 ## 7) Best Practices For AI Code Changes
@@ -109,7 +123,9 @@ No unit-test suite is provided; build success + contract consistency is mandator
 
 - "Add sensor type": sensing module + sample shape + encoder + manager registration + docs.
 - "Change payload schema": state binary + contract checks + parser behavior + docs/api-contract.
+- "Add websocket hook/type": create hook module + manager registration + websocket contract docs.
 - "Board-specific pins/features": profile headers + config wiring, not task-level conditionals.
+- "User-local pin customization": use `profile_user.h` override, do not edit tracked profile files.
 - "Boot behavior": `app::boot` hook first, then verify downstream task assumptions.
 - "Master interoperability issue": start from `docs/api-contract.md` and `src/app/espnow/*`.
 
