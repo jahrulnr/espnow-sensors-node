@@ -8,6 +8,8 @@ Technical documentation is split by topic so it stays modular and easy to naviga
 - Profile/pin/powersave configuration: [configuration.md](configuration.md)
 - Build matrix and verification: [build-and-verify.md](build-and-verify.md)
 - Node-master API contract: [api-contract.md](api-contract.md)
+- WebSocket gateway contract: [websocket-contract.md](websocket-contract.md)
+- How to add a WebSocket hook: [add-websocket-hook.md](add-websocket-hook.md)
 - How to add a new sensor: [add-sensor-module.md](add-sensor-module.md)
 
 ## Recommended Reading Order
@@ -16,6 +18,8 @@ Technical documentation is split by topic so it stays modular and easy to naviga
 2. `configuration.md`
 3. `build-and-verify.md`
 4. `api-contract.md`
-5. `add-sensor-module.md`
+5. `websocket-contract.md`
+6. `add-websocket-hook.md`
+7. `add-sensor-module.md`
 
 Indonesian version: [README_id.md](README_id.md)

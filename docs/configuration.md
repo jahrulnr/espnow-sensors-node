@@ -10,6 +10,11 @@ Profile selection is controlled by:
 - `include/board_profile.h`
 - `build_flags` in `platformio.ini`
 
+User-local override (optional):
+- If `include/profiles/profile_user.h` exists, it is selected first by `board_profile.h`.
+- This lets each user keep custom pin mapping without changing tracked profile files.
+- To customize quickly, copy an existing profile (for example `include/profiles/profile_esp32_c3.h`) to `include/profiles/profile_user.h`, then edit it locally.
+
 ## Available Profiles
 
 ### `BOARD_PROFILE_ESP32_C3`
@@ -24,6 +29,30 @@ Profile selection is controlled by:
 
 - DHT: enabled
 - mmWave: disabled (profile template)
+
+### `BOARD_PROFILE_ESP32_CAM`
+
+- Board target: AI Thinker ESP32-CAM (`esp32cam`)
+- DHT: disabled (default)
+- mmWave: disabled (default)
+- Camera: enabled (pin map follows `esp32cam/pins.hpp` `AiThinker` reference)
+- Camera pins:
+  - D0: GPIO5
+  - D1: GPIO18
+  - D2: GPIO19
+  - D3: GPIO21
+  - D4: GPIO36
+  - D5: GPIO39
+  - D6: GPIO34
+  - D7: GPIO35
+  - XCLK: GPIO0
+  - PCLK: GPIO22
+  - VSYNC: GPIO25
+  - HREF: GPIO23
+  - SDA: GPIO26
+  - SCL: GPIO27
+  - RESET: -1
+  - PWDN: GPIO32
 
 ## Powersave
 
@@ -59,6 +88,20 @@ WiFi STA support for advanced use cases (logging/dashboard/camera) is controlled
 - `WIFI_CONNECT_TIMEOUT_MS` (default `15000`)
 - `WIFI_CLIENT_HOSTNAME` (default `DEVICE_NAME`)
 
+WebSocket gateway settings:
+- `ENABLE_WEBSOCKET_GATEWAY` (default `1`, active only when WiFi mode is enabled and connected)
+- `WEBSOCKET_SERVER_PORT` (default `81`)
+- `WEBSOCKET_MAX_HOOKS` (default `8`)
+- `WEBSOCKET_CAMERA_DEFAULT_WIDTH` (default `320`)
+- `WEBSOCKET_CAMERA_DEFAULT_HEIGHT` (default `240`)
+- `WEBSOCKET_CAMERA_DEFAULT_FORMAT` (default `"jpg"`)
+- `WEBSOCKET_CAMERA_XCLK_HZ` (default `20000000`)
+- `WEBSOCKET_CAMERA_JPEG_QUALITY` (default `12`)
+- `WEBSOCKET_CAMERA_FB_COUNT` (default `2`)
+- `WEBSOCKET_STREAM_MAX_CLIENTS` (default `4`)
+- `WEBSOCKET_STREAM_DEFAULT_INTERVAL_MS` (default `500`)
+- `WEBSOCKET_STREAM_MIN_INTERVAL_MS` (default `120`)
+
 Behavior:
 - Node does not auto-connect WiFi on boot.
 - Node only attempts WiFi connection if:
@@ -66,9 +109,11 @@ Behavior:
   2. master sends WiFi credentials command.
 - If master does not send credentials, node skips WiFi connection.
 - When connected, node publishes WiFi hostname and mDNS as `<hostname>.local`.
+- WebSocket server starts only after WiFi is connected and provides type-based hooks for multipurpose requests.
 
 Ready build environment:
 - `esp32-c3-super-mini-wifi` (sets `ENABLE_WIFI_MODE=1`)
+- `esp32-cam-ai-thinker` (sets `BOARD_PROFILE_ESP32_CAM` and `ENABLE_WIFI_MODE=1`)
 
 ## Boot Behavior
 

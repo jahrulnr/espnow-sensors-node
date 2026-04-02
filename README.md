@@ -18,6 +18,7 @@ Main goals of this project:
 Example scenarios:
 - ESP32-C3: `mmwave + dht`
 - ESP32-S3: `dht`
+- ESP32-CAM (AI Thinker): `camera-ready profile + WiFi mode`
 - Other boards: just add a board profile and sensor modules.
 
 ## Start Here
@@ -28,6 +29,8 @@ If you want to:
 - Configure board profiles, pins, and powersave: [docs/configuration.md](docs/configuration.md)
 - Build and verify: [docs/build-and-verify.md](docs/build-and-verify.md)
 - Integrate a master using the protocol contract: [docs/api-contract.md](docs/api-contract.md)
+- Integrate clients over WebSocket gateway: [docs/websocket-contract.md](docs/websocket-contract.md)
+- Add custom WebSocket hooks: [docs/add-websocket-hook.md](docs/add-websocket-hook.md)
 - Add a new sensor type: [docs/add-sensor-module.md](docs/add-sensor-module.md)
 
 ## Notes

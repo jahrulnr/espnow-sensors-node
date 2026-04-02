@@ -18,6 +18,7 @@ Tujuan utama proyek ini:
 Contoh skenario:
 - ESP32-C3: `mmwave + dht`
 - ESP32-S3: `dht`
+- ESP32-CAM (AI Thinker): `profile camera-ready + mode WiFi`
 - Board lain: tinggal tambah profile dan module sensor.
 
 ## Mulai Dari Sini
@@ -28,6 +29,8 @@ Kalau kamu ingin:
 - Atur profile board, pin, dan powersave: [docs/configuration_id.md](docs/configuration_id.md)
 - Build dan verifikasi: [docs/build-and-verify_id.md](docs/build-and-verify_id.md)
 - Integrasi master berdasarkan kontrak protocol: [docs/api-contract_id.md](docs/api-contract_id.md)
+- Integrasi client lewat WebSocket gateway: [docs/websocket-contract_id.md](docs/websocket-contract_id.md)
+- Tambah WebSocket hook custom: [docs/add-websocket-hook_id.md](docs/add-websocket-hook_id.md)
 - Tambah jenis sensor baru: [docs/add-sensor-module_id.md](docs/add-sensor-module_id.md)
 
 ## Catatan

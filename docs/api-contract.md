@@ -234,4 +234,6 @@ In powersave mode:
 - `src/app/espnow/slave.cpp`
 - `src/app/espnow/contract_checks.cpp`
 
+WebSocket API contract is documented separately in [websocket-contract.md](websocket-contract.md).
+
 Indonesian version: [api-contract_id.md](api-contract_id.md)

@@ -233,3 +233,5 @@ Pada mode powersave:
 - `src/app/espnow/state_binary.h`
 - `src/app/espnow/slave.cpp`
 - `src/app/espnow/contract_checks.cpp`
+
+Kontrak API WebSocket didokumentasikan terpisah di [websocket-contract_id.md](websocket-contract_id.md).

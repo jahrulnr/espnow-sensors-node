@@ -32,6 +32,12 @@ Build C3 with WiFi mode enabled:
 pio run -e esp32-c3-super-mini-wifi
 ```
 
+Build AI Thinker ESP32-CAM profile:
+
+```bash
+pio run -e esp32-cam-ai-thinker
+```
+
 Build full matrix at once:
 
 ```bash
@@ -59,5 +65,15 @@ Expected:
 - Node tries to connect to received SSID.
 - On success, logs show hostname and mDNS endpoint `<hostname>.local`.
 - If no credentials command is sent by master, node does not connect WiFi.
+
+## WebSocket Validation (Optional)
+
+Prerequisites:
+- WiFi command flow already connected the node.
+
+Expected:
+- Log indicates websocket gateway active on configured port.
+- Sending JSON request with envelope `{"type":"system","data":{"state":"hooks"}}` returns JSON envelope response.
+- Sending `{"type":"camera","data":{"state":"specs"}}` returns camera specs JSON.
 
 Indonesian version: [build-and-verify_id.md](build-and-verify_id.md)
