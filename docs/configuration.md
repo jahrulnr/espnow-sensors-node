@@ -10,10 +10,15 @@ Profile selection is controlled by:
 - `include/board_profile.h`
 - `build_flags` in `platformio.ini`
 
-User-local override (optional):
-- If `include/profiles/profile_user.h` exists, it is selected first by `board_profile.h`.
-- This lets each user keep custom pin mapping without changing tracked profile files.
-- To customize quickly, copy an existing profile (for example `include/profiles/profile_esp32_c3.h`) to `include/profiles/profile_user.h`, then edit it locally.
+User-local custom profiles (optional):
+- Tracked template profiles are whitelisted in git.
+- Other files under `include/profiles/` are ignored by default, so local variants can be kept safely.
+- To customize quickly, copy an existing profile (for example `include/profiles/profile_esp32_c3.h`) to a new file (for example `include/profiles/profile_humidity.h`), then edit it locally.
+
+Macro-based include override (optional):
+- Define `PROFILE_INCLUDE_PATH` in `build_flags` to include any profile path directly.
+- Example: `-DPROFILE_INCLUDE_PATH='"profiles/profile_humidity.h"'`
+- This override has highest priority and is useful for custom profile variants without adding more selector macros.
 
 ## Available Profiles
 

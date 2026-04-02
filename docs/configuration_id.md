@@ -10,10 +10,15 @@ Pemilihan profile lewat:
 - `include/board_profile.h`
 - `build_flags` di `platformio.ini`
 
-Override lokal user (opsional):
-- Jika `include/profiles/profile_user.h` ada, file ini dipilih paling dulu oleh `board_profile.h`.
-- Ini memungkinkan tiap user menyimpan mapping pin custom tanpa mengubah file profile yang di-track git.
-- Untuk custom cepat, salin profile yang sudah ada (misalnya `include/profiles/profile_esp32_c3.h`) menjadi `include/profiles/profile_user.h`, lalu edit lokal.
+Profile custom lokal (opsional):
+- Profile template yang di-track git di-whitelist.
+- File lain di `include/profiles/` di-ignore secara default, jadi varian lokal bisa disimpan dengan aman.
+- Untuk custom cepat, salin profile yang sudah ada (misalnya `include/profiles/profile_esp32_c3.h`) ke file baru (misalnya `include/profiles/profile_humidity.h`), lalu edit lokal.
+
+Override include berbasis macro (opsional):
+- Definisikan `PROFILE_INCLUDE_PATH` di `build_flags` untuk meng-include path profile secara langsung.
+- Contoh: `-DPROFILE_INCLUDE_PATH='"profiles/profile_humidity.h"'`
+- Override ini punya prioritas tertinggi dan cocok untuk varian profile custom tanpa menambah macro selector baru.
 
 ## Profile Yang Tersedia
 

@@ -4,4 +4,7 @@
 /esp-skainet
 /tmp
 /include/secret.hinclude/secret.h
-/include/profiles/profile_user.h
+/include/profiles/*
+!/include/profiles/profile_esp32_c3.h
+!/include/profiles/profile_esp32_s3.h
+!/include/profiles/profile_esp32_cam.h
