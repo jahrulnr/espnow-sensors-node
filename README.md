@@ -6,30 +6,31 @@
 ![WiFi](https://img.shields.io/badge/WiFi-command--driven-blue)
 [![Docs](https://img.shields.io/badge/docs-wiki-0ea5e9)](docs/README.md)
 
-Node sensor modular berbasis ESP32 untuk skenario multi-purpose sensors collector lintas board/profile.
+A modular ESP32-based sensor node for multi-purpose sensor collector scenarios across boards and profiles.
 
-## Proyek Ini Untuk Apa
+## What This Project Is For
 
-Tujuan utama proyek ini:
-- Menjadikan node sensor fleksibel per board.
-- Kombinasi sensor bisa diganti lewat konfigurasi profile.
-- Jalur `boot`, `input`, dan `network` tetap terpisah supaya tidak gemuk.
+Main goals of this project:
+- Make the sensor node flexible across board targets.
+- Allow sensor combinations to be switched via profile configuration.
+- Keep `boot`, `input`, and `network` pipelines separated and maintainable.
 
-Contoh skenario:
+Example scenarios:
 - ESP32-C3: `mmwave + dht`
 - ESP32-S3: `dht`
-- Board lain: tinggal tambah profile dan module sensor.
+- Other boards: just add a board profile and sensor modules.
 
-## Mulai Dari Sini
+## Start Here
 
-Kalau kamu ingin:
-- Lihat peta dokumentasi: [docs/README.md](docs/README.md)
-- Paham arsitektur modular: [docs/architecture.md](docs/architecture.md)
-- Atur profile board, pin, dan powersave: [docs/configuration.md](docs/configuration.md)
-- Build dan verifikasi: [docs/build-and-verify.md](docs/build-and-verify.md)
-- Integrasi master berdasarkan kontrak protocol: [docs/api-contract.md](docs/api-contract.md)
-- Tambah jenis sensor baru: [docs/add-sensor-module.md](docs/add-sensor-module.md)
+If you want to:
+- See the documentation map: [docs/README.md](docs/README.md)
+- Understand the modular architecture: [docs/architecture.md](docs/architecture.md)
+- Configure board profiles, pins, and powersave: [docs/configuration.md](docs/configuration.md)
+- Build and verify: [docs/build-and-verify.md](docs/build-and-verify.md)
+- Integrate a master using the protocol contract: [docs/api-contract.md](docs/api-contract.md)
+- Add a new sensor type: [docs/add-sensor-module.md](docs/add-sensor-module.md)
 
-## Catatan
+## Notes
 
-- Detail teknis dipusatkan di folder [docs](docs/).
+- Technical details are centralized in the [docs](docs/) folder.
+- Indonesian version: [README_id.md](README_id.md)

@@ -1,40 +1,42 @@
 # Architecture
 
-## Prinsip
+## Principles
 
-- Sensor modular via interface `ISensorModule`.
-- `networkTask` tidak membaca driver sensor langsung.
-- `boot`, `input`, dan `network` punya tanggung jawab terpisah.
+- Sensors are modular through the `ISensorModule` interface.
+- `networkTask` does not read sensor drivers directly.
+- `boot`, `input`, and `network` have separate responsibilities.
 
-## Komponen Utama
+## Main Components
 
-- Kontrak module sensor:
+- Sensor module contract:
   - `src/app/sensing/sensor_module.h`
-- Bentuk data sample lintas sensor:
+- Cross-sensor sample data shape:
   - `src/app/sensing/sensor_sample.h`
-- Registry sensor aktif:
+- Active sensor registry:
   - `src/app/sensing/sensor_manager.h`
   - `src/app/sensing/sensor_manager.cpp`
-- Encoder sample ke payload binary:
+- Sample-to-binary payload encoder:
   - `src/app/sensing/sensor_encoder.h`
   - `src/app/sensing/sensor_encoder.cpp`
-- WiFi control command-driven (opsional, layer network):
+- Command-driven WiFi control (optional, network layer):
   - `src/app/network/wifi_manager.h`
   - `src/app/network/wifi_manager.cpp`
 - Reusable signal-processing algorithms:
   - `src/app/algorithms/` (binary state filter, median window, EMA, trimmed mean)
 
-## Flow Runtime
+## Runtime Flow
 
-1. `setup()` memanggil `app::boot::run()`.
-2. `boot` inisialisasi sensor via `SensorManager`.
-3. `boot` ambil 1 sample awal per module, lalu log.
-4. `networkTask` handle link ESP-NOW + publish identity/features.
-5. `inputTask` (saat non-powersave) polling sensor via manager dan publish payload encoded.
+1. `setup()` calls `app::boot::run()`.
+2. `boot` initializes sensors through `SensorManager`.
+3. `boot` takes one initial sample per active module and logs it.
+4. `networkTask` handles ESP-NOW link management and publishes identity/features.
+5. `inputTask` (when powersave is disabled) polls sensors through manager and publishes encoded payloads.
 
-## Boundary Yang Dijaga
+## Protected Boundaries
 
-- Sensor logic tetap di layer sensing/module.
-- Format payload diisolasi di encoder.
-- Network hanya transport dan state link/master.
-- Penambahan sensor baru tidak mengharuskan ubah `networkTask`.
+- Sensor logic stays in sensing/module layer.
+- Payload format is isolated in encoder.
+- Network layer handles transport and link/master state only.
+- Adding a new sensor should not require changing `networkTask`.
+
+Indonesian version: [architecture_id.md](architecture_id.md)

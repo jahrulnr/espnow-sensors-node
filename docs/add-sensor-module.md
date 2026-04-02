@@ -1,12 +1,12 @@
 # Add Sensor Module
 
-Panduan singkat menambah sensor baru tanpa mengubah logic network.
+A short guide to add a new sensor without changing network logic.
 
-Lihat juga index wiki: [README.md](README.md)
+See wiki index: [README.md](README.md)
 
-## 1) Buat Module Adapter
+## 1) Create Module Adapter
 
-Buat file di `src/app/sensing/modules/` yang implement `ISensorModule`:
+Create files in `src/app/sensing/modules/` implementing `ISensorModule`:
 
 - `id()`
 - `featureBit()`
@@ -15,68 +15,70 @@ Buat file di `src/app/sensing/modules/` yang implement `ISensorModule`:
 - `readSample()`
 - `bootSample()`
 
-Referensi implementasi:
+Implementation references:
 
 - `dht_module.cpp`
 - `mmwave_module.cpp`
 
-## 2) Tambah Data Shape di Sensor Sample
+## 2) Add Data Shape in Sensor Sample
 
-Jika sensor butuh payload baru, tambahkan field data baru di:
+If sensor needs a new payload shape, add data fields in:
 
 - `src/app/sensing/sensor_sample.h`
 
-Contoh: `struct MotionSampleData` lalu masukkan ke `SensorSample`.
+Example: add `struct MotionSampleData`, then include it in `SensorSample`.
 
-## 3) Tambah Encoder Mapping
+## 3) Add Encoder Mapping
 
-Mapping `SensorSample -> state_binary` ada di:
+`SensorSample -> state_binary` mapping is in:
 
 - `src/app/sensing/sensor_encoder.cpp`
 
-Tambahkan `case SensorKind::<YourKind>` untuk menghasilkan payload binary.
+Add `case SensorKind::<YourKind>` to produce binary payload.
 
-## 4) Register Module ke SensorManager
+## 4) Register Module in SensorManager
 
-Daftarkan module di:
+Register module in:
 
 - `src/app/sensing/sensor_manager.cpp`
 
-Pola saat ini:
+Current pattern:
 
-- deklarasi static instance module
-- panggil `registerModule(...)` di `ensureRegistryInitialized()`
+- declare static module instance
+- call `registerModule(...)` in `ensureRegistryInitialized()`
 
-## 5) Tambah Feature Bit (opsional)
+## 5) Add Feature Bit (Optional)
 
-Jika perlu capability flag baru ke master:
+If you need a new capability flag for master:
 
-- tambahkan bit di `state_binary.h`
-- kembalikan bit itu dari `featureBit()` module
+- add the bit in `state_binary.h`
+- return that bit from module `featureBit()`
 
-`FeaturesState` akan otomatis ikut karena `network/slave` membaca dari `sensorManager.featureBits()`.
+`FeaturesState` will include it automatically because `network/slave` reads from `sensorManager.featureBits()`.
 
-## 6) Tambah Profile Config
+## 6) Add Profile Config
 
-Jika sensor hanya untuk board tertentu, update profile:
+If sensor is board-specific, update profile:
 
 - `include/profiles/profile_*.h`
 
-Lalu pakai macro profile itu di module adapter.
+Then use those profile macros in the module adapter.
 
-## 7) Validasi
+## 7) Validate
 
-Minimal jalankan:
+At minimum run:
 
 ```bash
 platformio run -e esp32-c3-super-mini
 ```
 
-Jika menambah profile baru, build env profile tersebut juga.
+If you add a new profile, build that profile environment too.
 
-## 8) Reusable Filtering (Opsional)
+## 8) Reusable Filtering (Optional)
 
-Jika sensor baru butuh filtering/noise handling, reuse komponen di:
+If new sensor needs filtering/noise handling, reuse components in:
 - `src/app/algorithms/`
 
-Tujuannya supaya logic filter tidak duplikat antar module.
+This keeps filter logic reusable across modules.
+
+Indonesian version: [add-sensor-module_id.md](add-sensor-module_id.md)

@@ -1,37 +1,37 @@
 # Configuration
 
-## Struktur Konfigurasi
+## Configuration Structure
 
-Konfigurasi dibagi dua lapis:
+Configuration is split into two layers:
 - Global policy: `include/app_config.h`
-- Board profile (pin + sensor set): `include/profiles/profile_*.h`
+- Board profile (pins + enabled sensor set): `include/profiles/profile_*.h`
 
-Pemilihan profile lewat:
+Profile selection is controlled by:
 - `include/board_profile.h`
-- `build_flags` di `platformio.ini`
+- `build_flags` in `platformio.ini`
 
-## Profile Yang Tersedia
+## Available Profiles
 
 ### `BOARD_PROFILE_ESP32_C3`
 
-- DHT: aktif
-- mmWave: aktif
-- Pin mmWave:
+- DHT: enabled
+- mmWave: enabled
+- mmWave pins:
   - TX: GPIO3
   - RX: GPIO4
 
 ### `BOARD_PROFILE_ESP32_S3`
 
-- DHT: aktif
-- mmWave: nonaktif (template profile)
+- DHT: enabled
+- mmWave: disabled (profile template)
 
 ## Powersave
 
-Mode yang tersedia:
+Available modes:
 - Deep sleep (`POWERSAVE_SLEEP_MODE_DEEP`), default interval `10s`
 - Light sleep (`POWERSAVE_SLEEP_MODE_LIGHT`), default interval `300ms`
 
-Macro penting di `include/app_config.h`:
+Important macros in `include/app_config.h`:
 - `ENABLE_POWERSAVE`
 - `POWERSAVE_SLEEP_MODE`
 - `POWERSAVE_DEEP_SLEEP_SEC`
@@ -39,7 +39,7 @@ Macro penting di `include/app_config.h`:
 
 ## Sensor Filtering
 
-mmWave filtering (default aktif):
+mmWave filtering (enabled by default):
 - `MMWAVE_FILTER_ENABLED`
 - `MMWAVE_PRESENCE_ON_CONSECUTIVE`
 - `MMWAVE_PRESENCE_OFF_CONSECUTIVE`
@@ -52,29 +52,31 @@ Battery analog filtering:
 - `BATTERY_ADC_TRIM_PERCENT`
 - `BATTERY_VOLTAGE_EMA_ALPHA`
 
-## WiFi Mode (Opsional)
+## WiFi Mode (Optional)
 
-Fitur WiFi STA untuk use-case lanjut (logging/dashboard/camera) dikontrol oleh macro:
+WiFi STA support for advanced use cases (logging/dashboard/camera) is controlled by:
 - `ENABLE_WIFI_MODE` (default `0`)
 - `WIFI_CONNECT_TIMEOUT_MS` (default `15000`)
 - `WIFI_CLIENT_HOSTNAME` (default `DEVICE_NAME`)
 
-Perilaku:
-- Node tidak akan connect WiFi otomatis saat boot.
-- Node hanya akan connect WiFi jika:
+Behavior:
+- Node does not auto-connect WiFi on boot.
+- Node only attempts WiFi connection if:
   1. `ENABLE_WIFI_MODE == 1`
-  2. master mengirim command kredensial WiFi.
-- Jika master tidak mengirim kredensial, node skip koneksi WiFi.
-- Saat koneksi berhasil, node publish hostname WiFi dan mDNS di `<hostname>.local`.
+  2. master sends WiFi credentials command.
+- If master does not send credentials, node skips WiFi connection.
+- When connected, node publishes WiFi hostname and mDNS as `<hostname>.local`.
 
-Env build siap pakai:
-- `esp32-c3-super-mini-wifi` (set `ENABLE_WIFI_MODE=1`)
+Ready build environment:
+- `esp32-c3-super-mini-wifi` (sets `ENABLE_WIFI_MODE=1`)
 
-## Behavior Boot
+## Boot Behavior
 
-Sebelum coba link ke master:
-1. Boot init semua sensor aktif.
-2. Ambil 1 sample awal dari setiap module.
-3. Tulis sample ke log.
+Before attempting to link with master:
+1. Boot initializes all active sensors.
+2. Takes one initial sample from each module.
+3. Writes those samples to logs.
 
-Jika master tidak terhubung, flow powersave tetap lanjut ke cycle sleep.
+If master is not connected, powersave flow still continues to the sleep cycle.
+
+Indonesian version: [configuration_id.md](configuration_id.md)

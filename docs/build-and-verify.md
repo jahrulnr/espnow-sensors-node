@@ -1,4 +1,4 @@
-# Build And Verify
+# Build and Verify
 
 ## Build Per Environment
 
@@ -26,36 +26,38 @@ Build S3 template:
 pio run -e esp32-s3-devkitc1-n16r8
 ```
 
-Build C3 dengan WiFi mode enable:
+Build C3 with WiFi mode enabled:
 
 ```bash
 pio run -e esp32-c3-super-mini-wifi
 ```
 
-Build matrix sekaligus:
+Build full matrix at once:
 
 ```bash
 pio run -e esp32-c3-super-mini -e esp32-c3-super-mini-deep -e esp32-c3-super-mini-light -e esp32-s3-devkitc1-n16r8
 ```
 
-## Validasi Yang Wajib
+## Required Validation
 
-- Build matrix lintas profile harus sukses.
-- Boot log harus menampilkan 1 sample awal per module aktif.
-- Pada mode powersave:
-  - Deep sleep sesuai interval default `10s`
-  - Light sleep sesuai interval default `300ms`
-- Contract payload dijaga oleh static check di:
+- Build matrix across profiles must succeed.
+- Boot log must show one initial sample per active module.
+- In powersave mode:
+  - Deep sleep follows default `10s` interval
+  - Light sleep follows default `300ms` interval
+- Payload contract is guarded by static checks in:
   - `src/app/espnow/contract_checks.cpp`
 
-## Validasi WiFi Command (Opsional)
+## WiFi Command Validation (Optional)
 
-Prasyarat:
-- Build dengan `ENABLE_WIFI_MODE=1`.
-- Master mengirim `PacketType::COMMAND` dengan payload `Type=WifiCredentials`.
+Prerequisites:
+- Build with `ENABLE_WIFI_MODE=1`.
+- Master sends `PacketType::COMMAND` with `Type=WifiCredentials` payload.
 
 Expected:
-- Node log bahwa request connect di-queue.
-- Node mencoba konek ke SSID yang dikirim.
-- Saat sukses, log menampilkan hostname dan endpoint mDNS `<hostname>.local`.
-- Jika tidak ada command kredensial dari master, node tidak connect WiFi.
+- Node logs that connect request is queued.
+- Node tries to connect to received SSID.
+- On success, logs show hostname and mDNS endpoint `<hostname>.local`.
+- If no credentials command is sent by master, node does not connect WiFi.
+
+Indonesian version: [build-and-verify_id.md](build-and-verify_id.md)
