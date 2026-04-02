@@ -2,6 +2,7 @@
 
 #include "state_binary.h"
 
+#include "app/actuation/actuator_manager.h"
 #include "app/network/wifi_manager.h"
 #include "app/sensing/sensor_manager.h"
 #include <app_config.h>
@@ -39,7 +40,8 @@ bool sendFeaturesStateNow(SlaveNode& node) {
   app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::Features);
   state.contractVersion = 1;
   state.featureBits = static_cast<uint32_t>(app::espnow::state_binary::FeatureIdentity)
-                   | app::sensing::sensorManager.featureBits();
+                   | app::sensing::sensorManager.featureBits()
+                   | app::actuation::actuatorManager.featureBits();
 #if ENABLE_WIFI_MODE
   state.featureBits |= static_cast<uint32_t>(app::espnow::state_binary::FeatureWifiSta);
 #endif
@@ -49,6 +51,23 @@ bool sendFeaturesStateNow(SlaveNode& node) {
     ESP_LOGW("espnow_slave", "Failed sending feature state");
   }
   return sent;
+}
+
+void sendServoAckNow(SlaveNode& node, const app::actuation::ActuationResponse& response) {
+  app::espnow::state_binary::ServoAckState state = {};
+  app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::ServoAck);
+  state.ok = response.ok ? 1 : 0;
+  state.status = static_cast<uint8_t>(response.status);
+  strncpy(state.group, response.servo.group, sizeof(state.group) - 1);
+  state.group[sizeof(state.group) - 1] = '\0';
+  state.channel = response.servo.channel;
+  state.targetDeg10 = response.servo.targetDeg10;
+  state.appliedDeg10 = response.servo.appliedDeg10;
+  state.timestampMs = response.timestampMs;
+
+  if (!node.sendStateBinary(&state, sizeof(state))) {
+    ESP_LOGW("espnow_slave", "Failed sending servo ack state");
+  }
 }
 
 }  // namespace
@@ -490,6 +509,26 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
           if (!app::network::wifiManager.requestConnect(ssid, password)) {
             ESP_LOGW(TAG, "WiFi credentials command rejected");
           }
+          break;
+        }
+        if (app::espnow::state_binary::hasTypeAndSize(payload,
+                                                      payloadSize,
+                                                      app::espnow::state_binary::Type::ServoControl,
+                                                      sizeof(app::espnow::state_binary::ServoControlCommand))) {
+          const auto* command = reinterpret_cast<const app::espnow::state_binary::ServoControlCommand*>(payload);
+
+          app::actuation::ActuationRequest request = {};
+          request.kind = app::actuation::ActuatorKind::Servo;
+          request.timestampMs = millis();
+          strncpy(request.servo.group, command->group, sizeof(request.servo.group) - 1);
+          request.servo.group[sizeof(request.servo.group) - 1] = '\0';
+          request.servo.channel = command->channel;
+          request.servo.targetDeg10 = command->targetDeg10;
+          request.servo.transitionMs = command->transitionMs;
+
+          app::actuation::ActuationResponse response = {};
+          app::actuation::actuatorManager.handleRequest(request, response);
+          sendServoAckNow(*activeInstance, response);
           break;
         }
       } else {

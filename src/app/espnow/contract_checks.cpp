@@ -15,6 +15,8 @@ static_assert(static_cast<uint8_t>(state_binary::Type::Features) == 9, "Features
 static_assert(static_cast<uint8_t>(state_binary::Type::IdentityReq) == 10, "IdentityReq type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::Mmwave) == 11, "Mmwave type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::WifiCredentials) == 12, "WifiCredentials type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::ServoControl) == 13, "ServoControl type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::ServoAck) == 14, "ServoAck type changed");
 
 static_assert(sizeof(state_binary::Header) == 4, "state_binary::Header size changed");
 static_assert(sizeof(state_binary::SensorState) <= MAX_PAYLOAD_SIZE, "SensorState exceeds ESP-NOW payload");
@@ -22,6 +24,10 @@ static_assert(sizeof(state_binary::MmwaveState) <= MAX_PAYLOAD_SIZE, "MmwaveStat
 static_assert(sizeof(state_binary::FeaturesState) <= MAX_PAYLOAD_SIZE, "FeaturesState exceeds ESP-NOW payload");
 static_assert(sizeof(state_binary::WifiCredentialsCommand) <= MAX_PAYLOAD_SIZE,
               "WifiCredentialsCommand exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::ServoControlCommand) <= MAX_PAYLOAD_SIZE,
+              "ServoControlCommand exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::ServoAckState) <= MAX_PAYLOAD_SIZE,
+              "ServoAckState exceeds ESP-NOW payload");
 
 static_assert(std::is_trivially_copyable<state_binary::SensorState>::value,
               "SensorState must remain trivially copyable");
@@ -29,5 +35,9 @@ static_assert(std::is_trivially_copyable<state_binary::MmwaveState>::value,
               "MmwaveState must remain trivially copyable");
 static_assert(std::is_trivially_copyable<state_binary::WifiCredentialsCommand>::value,
               "WifiCredentialsCommand must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::ServoControlCommand>::value,
+              "ServoControlCommand must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::ServoAckState>::value,
+              "ServoAckState must remain trivially copyable");
 
 }  // namespace app::espnow

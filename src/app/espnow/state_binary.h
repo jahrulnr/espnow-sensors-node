@@ -20,6 +20,8 @@ enum class Type : uint8_t {
   IdentityReq = 10,
   Mmwave = 11,
   WifiCredentials = 12,
+  ServoControl = 13,
+  ServoAck = 14,
 };
 
 enum Feature : uint32_t {
@@ -32,6 +34,7 @@ enum Feature : uint32_t {
   FeatureControlBasic = 1UL << 6,
   FeatureMmwave = 1UL << 7,
   FeatureWifiSta = 1UL << 8,
+  FeatureActuationServo = 1UL << 9,
 };
 
 enum class HttpMethod : uint8_t {
@@ -111,6 +114,25 @@ struct __attribute__((packed)) WifiCredentialsCommand {
   Header header;
   char ssid[32];
   char password[64];
+};
+
+struct __attribute__((packed)) ServoControlCommand {
+  Header header;
+  char group[16];
+  uint8_t channel;
+  uint16_t targetDeg10;
+  uint16_t transitionMs;
+};
+
+struct __attribute__((packed)) ServoAckState {
+  Header header;
+  uint8_t ok;
+  uint8_t status;
+  char group[16];
+  uint8_t channel;
+  uint16_t targetDeg10;
+  uint16_t appliedDeg10;
+  uint32_t timestampMs;
 };
 
 inline void initHeader(Header& header, Type type) {

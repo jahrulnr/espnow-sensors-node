@@ -1,5 +1,6 @@
 #include "boot.h"
 
+#include "app/actuation/actuator_manager.h"
 #include "app/sensing/sensor_encoder.h"
 #include "app/sensing/sensor_manager.h"
 
@@ -39,9 +40,16 @@ bool ensureSensorsReady() {
   return app::sensing::sensorManager.beginAll();
 }
 
+bool ensureActuatorsReady() {
+  return app::actuation::actuatorManager.beginAll();
+}
+
 void run() {
   if (!ensureSensorsReady()) {
     ESP_LOGW(TAG, "One or more sensor modules failed to initialize");
+  }
+  if (!ensureActuatorsReady()) {
+    ESP_LOGW(TAG, "One or more actuator modules failed to initialize");
   }
   app::sensing::sensorManager.collectBootSamples(logBootSample, nullptr);
 }

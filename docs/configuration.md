@@ -21,6 +21,7 @@ User-local override (optional):
 
 - DHT: enabled
 - mmWave: enabled
+- Servo output: disabled by default
 - mmWave pins:
   - TX: GPIO3
   - RX: GPIO4
@@ -29,6 +30,7 @@ User-local override (optional):
 
 - DHT: enabled
 - mmWave: disabled (profile template)
+- Servo output: disabled by default
 
 ### `BOARD_PROFILE_ESP32_CAM`
 
@@ -36,6 +38,7 @@ User-local override (optional):
 - DHT: disabled (default)
 - mmWave: disabled (default)
 - Camera: enabled (pin map follows `esp32cam/pins.hpp` `AiThinker` reference)
+- Servo output: disabled by default (reserved for named group `camera_pan_tilt`)
 - Camera pins:
   - D0: GPIO5
   - D1: GPIO18
@@ -80,6 +83,22 @@ Battery analog filtering:
 - `BATTERY_ADC_SAMPLES`
 - `BATTERY_ADC_TRIM_PERCENT`
 - `BATTERY_VOLTAGE_EMA_ALPHA`
+
+## Servo Output (Optional)
+
+Servo output control is command-driven from master and supports named logical group routing.
+
+Key macros in `include/app_config.h`:
+- `SERVO_OUTPUT_ENABLED`
+- `SERVO_GROUP_NAME`
+- `SERVO_GROUP_CHANNEL_COUNT`
+- `SERVO_MIN_DEG10`
+- `SERVO_MAX_DEG10`
+- `SERVO_DEFAULT_DEG10`
+
+Board profile pin mapping:
+- `BOARD_PROFILE_SERVO_PIN_CH0`
+- `BOARD_PROFILE_SERVO_PIN_CH1`
 
 ## WiFi Mode (Optional)
 

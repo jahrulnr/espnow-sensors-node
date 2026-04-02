@@ -90,6 +90,8 @@ Minimum master validation:
 - `10 = IdentityReq` (COMMAND payload)
 - `11 = Mmwave`
 - `12 = WifiCredentials` (COMMAND payload)
+- `13 = ServoControl` (COMMAND payload)
+- `14 = ServoAck` (STATE payload)
 
 ## Payload Structures and Semantics
 
@@ -150,6 +152,7 @@ Feature bits used by node:
 - `bit1 (1<<1) = FeatureSensor` (DHT)
 - `bit7 (1<<7) = FeatureMmwave`
 - `bit8 (1<<8) = FeatureWifiSta` (WiFi command capability, enabled when WiFi mode build is enabled)
+- `bit9 (1<<9) = FeatureActuationServo`
 
 Master should treat other bits as unknown/forward-compatible.
 
@@ -164,6 +167,21 @@ struct MmwaveState {
   uint16_t frameCount;
   uint16_t byteCount;
 };
+
+### ServoAck (`Type=14`)
+
+```c
+struct ServoAckState {
+  Header header;
+  uint8_t ok;       // 0/1
+  uint8_t status;   // 0=ok, 1=disabled, 2=invalidGroup, 3=invalidChannel, 4=invalidValue, 5=driverError
+  char group[16];   // named logical group
+  uint8_t channel;  // channel index inside group
+  uint16_t targetDeg10;
+  uint16_t appliedDeg10;
+  uint32_t timestampMs;
+};
+```
 ```
 
 ## COMMAND Contract
@@ -182,7 +200,7 @@ Node response:
 1. sends `IdentityState`
 2. sends `FeaturesState`
 
-Commands other than `IdentityReq` and `WifiCredentials` are currently ignored.
+Commands other than `IdentityReq`, `WifiCredentials`, and `ServoControl` are currently ignored.
 
 ### WifiCredentials (`Type=12`)
 
@@ -204,13 +222,31 @@ Field encoding notes:
 - `ssid`/`password` may be null-terminated or partially filled buffers.
 - Node truncates length to field capacities (`32`/`64`) when longer.
 
+### ServoControl (`Type=13`)
+
+```c
+struct ServoControlCommand {
+  Header header;
+  char group[16];   // named logical group, e.g. "camera_pan_tilt"
+  uint8_t channel;  // servo channel index in the group
+  uint16_t targetDeg10;
+  uint16_t transitionMs; // reserved for smooth move policy; currently accepted as metadata
+};
+```
+
+Node behavior:
+- Delegates command to modular actuator manager.
+- Returns one `ServoAckState` as `PacketType::STATE` payload.
+- If command fails validation (group/channel/range/driver), `ok=0` and `status` explains reason.
+
 ## Runtime Sequence (Practical for Master)
 
 Typical order after node is linked:
 1. Node sends `IdentityState` and `FeaturesState`.
 2. Node sends sensor samples (`SensorState`, `MmwaveState`) according to interval/module.
 3. Master can send `IdentityReq` anytime to re-sync node metadata.
-4. Master sends periodic `HEARTBEAT` to keep link alive.
+4. Master can send `ServoControl` and receive `ServoAck` runtime state response.
+5. Master sends periodic `HEARTBEAT` to keep link alive.
 
 In powersave mode:
 - Every wake cycle, node waits for link until timeout.
