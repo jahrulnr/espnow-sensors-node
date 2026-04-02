@@ -4,3 +4,4 @@
 /esp-skainet
 /tmp
 /include/secret.hinclude/secret.h
+/include/profiles/profile_user.h
