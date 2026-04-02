@@ -73,3 +73,10 @@ platformio run -e esp32-c3-super-mini
 ```
 
 Jika menambah profile baru, build env profile tersebut juga.
+
+## 8) Reusable Filtering (Opsional)
+
+Jika sensor baru butuh filtering/noise handling, reuse komponen di:
+- `src/app/algorithms/`
+
+Tujuannya supaya logic filter tidak duplikat antar module.

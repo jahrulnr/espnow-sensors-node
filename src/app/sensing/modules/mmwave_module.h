@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/algorithms/binary_state_filter.h"
+#include "app/algorithms/median_window_u16.h"
 #include "app/sensing/sensor_module.h"
 
 namespace app::sensing {
@@ -18,6 +20,8 @@ class MmwaveSensorModule final : public ISensorModule {
  private:
   bool started = false;
   uint32_t lastReadMs = 0;
+  app::algorithms::BinaryStateFilter presenceFilter;
+  app::algorithms::MedianWindowU16 distanceFilter;
 };
 
 }  // namespace app::sensing

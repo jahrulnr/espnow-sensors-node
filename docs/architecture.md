@@ -21,6 +21,8 @@
 - WiFi control command-driven (opsional, layer network):
   - `src/app/network/wifi_manager.h`
   - `src/app/network/wifi_manager.cpp`
+- Reusable signal-processing algorithms:
+  - `src/app/algorithms/` (binary state filter, median window, EMA, trimmed mean)
 
 ## Flow Runtime
 

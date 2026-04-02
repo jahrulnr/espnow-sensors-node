@@ -9,6 +9,22 @@
 
 namespace app::sensing {
 
+namespace {
+
+void fillSampleFromReading(const app::sensor::MmwaveReading& reading, SensorSample& out) {
+  out = {};
+  out.kind = SensorKind::Mmwave;
+  out.timestampMs = millis();
+  out.valid = true;
+  out.mmwave.detected = reading.targetDetected;
+  out.mmwave.hasDistance = reading.hasDistance;
+  out.mmwave.distanceCm = reading.distanceCm;
+  out.mmwave.frameCount = reading.frames;
+  out.mmwave.byteCount = reading.bytes;
+}
+
+}  // namespace
+
 const char* MmwaveSensorModule::id() const {
   return "mmwave";
 }
@@ -26,6 +42,12 @@ bool MmwaveSensorModule::begin() {
   if (!started) {
     started = app::sensor::mmwaveSensor.begin(MMWAVE_UART_RX_PIN, MMWAVE_UART_TX_PIN, MMWAVE_UART_BAUDRATE);
     lastReadMs = millis();
+    presenceFilter.configure(MMWAVE_PRESENCE_ON_CONSECUTIVE,
+                             MMWAVE_PRESENCE_OFF_CONSECUTIVE,
+                             MMWAVE_PRESENCE_OFF_HOLD_MS);
+    presenceFilter.reset(false);
+    distanceFilter.setWindowSize(MMWAVE_DISTANCE_MEDIAN_WINDOW);
+    distanceFilter.reset();
   }
   return started;
 #else
@@ -62,15 +84,21 @@ bool MmwaveSensorModule::readSample(SensorSample& out) {
     return false;
   }
 
-  out = {};
-  out.kind = SensorKind::Mmwave;
+  fillSampleFromReading(reading, out);
   out.timestampMs = now;
-  out.valid = true;
-  out.mmwave.detected = reading.targetDetected;
-  out.mmwave.hasDistance = reading.hasDistance;
-  out.mmwave.distanceCm = reading.distanceCm;
-  out.mmwave.frameCount = reading.frames;
-  out.mmwave.byteCount = reading.bytes;
+
+#if MMWAVE_FILTER_ENABLED
+  out.mmwave.detected = presenceFilter.update(reading.targetDetected, now);
+
+  if (reading.hasDistance) {
+    distanceFilter.push(reading.distanceCm);
+  }
+  if (distanceFilter.hasValue()) {
+    out.mmwave.hasDistance = true;
+    out.mmwave.distanceCm = distanceFilter.median();
+  }
+#endif
+
   return true;
 #endif
 }
@@ -95,15 +123,20 @@ bool MmwaveSensorModule::bootSample(SensorSample& out) {
     return false;
   }
 
-  out = {};
-  out.kind = SensorKind::Mmwave;
-  out.timestampMs = millis();
-  out.valid = true;
-  out.mmwave.detected = reading.targetDetected;
-  out.mmwave.hasDistance = reading.hasDistance;
-  out.mmwave.distanceCm = reading.distanceCm;
-  out.mmwave.frameCount = reading.frames;
-  out.mmwave.byteCount = reading.bytes;
+  fillSampleFromReading(reading, out);
+
+#if MMWAVE_FILTER_ENABLED
+  out.mmwave.detected = presenceFilter.update(reading.targetDetected, out.timestampMs);
+
+  if (reading.hasDistance) {
+    distanceFilter.push(reading.distanceCm);
+  }
+  if (distanceFilter.hasValue()) {
+    out.mmwave.hasDistance = true;
+    out.mmwave.distanceCm = distanceFilter.median();
+  }
+#endif
+
   return true;
 #endif
 }

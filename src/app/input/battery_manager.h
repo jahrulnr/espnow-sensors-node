@@ -2,6 +2,7 @@
 #define BATTERY_MANAGER_H
 
 #include <Arduino.h>
+#include "app/algorithms/ema_filter.h"
 
 // Battery level states
 enum BatteryState {
@@ -41,6 +42,7 @@ private:
     bool notifyLow;                  // Whether to notify on low
     bool wasLowNotified;             // Whether low notification was shown
     bool wasCriticalNotified;        // Whether critical notification was shown
+    app::algorithms::EmaFilterFloat voltageEma;
     
     void setup();
 

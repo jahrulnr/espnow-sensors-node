@@ -37,6 +37,21 @@ Macro penting di `include/app_config.h`:
 - `POWERSAVE_DEEP_SLEEP_SEC`
 - `POWERSAVE_LIGHT_SLEEP_MS`
 
+## Sensor Filtering
+
+mmWave filtering (default aktif):
+- `MMWAVE_FILTER_ENABLED`
+- `MMWAVE_PRESENCE_ON_CONSECUTIVE`
+- `MMWAVE_PRESENCE_OFF_CONSECUTIVE`
+- `MMWAVE_PRESENCE_OFF_HOLD_MS`
+- `MMWAVE_DISTANCE_MEDIAN_WINDOW`
+
+Battery analog filtering:
+- `BATTERY_FILTER_ENABLED`
+- `BATTERY_ADC_SAMPLES`
+- `BATTERY_ADC_TRIM_PERCENT`
+- `BATTERY_VOLTAGE_EMA_ALPHA`
+
 ## WiFi Mode (Opsional)
 
 Fitur WiFi STA untuk use-case lanjut (logging/dashboard/camera) dikontrol oleh macro:

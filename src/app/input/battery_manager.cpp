@@ -1,15 +1,22 @@
 #include "battery_manager.h"
 
+#include "app/algorithms/trimmed_mean.h"
 #include <app_config.h>
+#include <esp_log.h>
 
-#define BATTERY_CRITICAL   10    // Critical battery level
-#define BATTERY_LOW        25    // Low battery level
-#define BATTERY_MEDIUM     50    // Medium battery level
-#define BATTERY_HIGH       75    // High battery level
-#define BATTERY_SAMPLES    10    // Number of samples to average for stable reading
+namespace {
 
-#define BATTERY_NOTIFY_CRITICAL true  // Notify when battery is critical
-#define BATTERY_NOTIFY_LOW      true  // Notify when battery is low
+static constexpr const char* TAG = "battery";
+static constexpr int BATTERY_CRITICAL = 10;
+static constexpr int BATTERY_LOW = 25;
+static constexpr int BATTERY_MEDIUM = 50;
+static constexpr int BATTERY_HIGH = 75;
+static constexpr size_t BATTERY_ADC_SAMPLE_CAP = 32;
+
+static constexpr bool BATTERY_NOTIFY_CRITICAL = true;
+static constexpr bool BATTERY_NOTIFY_LOW = true;
+
+}  // namespace
 
 BatteryManager::BatteryManager() {
     voltageMax = 4.2;
@@ -30,6 +37,8 @@ BatteryManager::BatteryManager() {
     notifyLow = BATTERY_NOTIFY_LOW;
     wasLowNotified = false;
     wasCriticalNotified = false;
+    voltageEma.reset();
+    voltageEma.setAlpha(BATTERY_VOLTAGE_EMA_ALPHA);
 
     pinMode(batteryPin, INPUT);
 }
@@ -98,25 +107,33 @@ void BatteryManager::update() {
 }
 
 float BatteryManager::readVoltage() {
-    // Take multiple samples to stabilize reading
-    uint32_t sum = 0;
-    for (int i = 0; i < BATTERY_SAMPLES; i++) {
-        sum += static_cast<uint32_t>(analogRead(batteryPin));
+    size_t sampleCount = BATTERY_ADC_SAMPLES;
+    if (sampleCount < 1) {
+        sampleCount = 1;
     }
-    
-    // Average the readings
-    float rawValue = static_cast<float>(sum) / static_cast<float>(BATTERY_SAMPLES);
-    
-    // Convert ADC reading to voltage (considering voltage divider)
-    // First calculate the voltage at the ADC pin: ADC value * (3.3V reference / resolution)
-    float adcVoltage = rawValue * (3.3 / adcResolution);
-    
-    // Then calculate the actual battery voltage using the voltage divider formula
-    // For two equal resistors (100k), the voltage is doubled from what the ADC reads
-    float voltage = adcVoltage * voltageDivider;
-    ESP_LOGI("battery", "battery voltage=%.2f", voltage);
-    
-    return voltage;
+    if (sampleCount > BATTERY_ADC_SAMPLE_CAP) {
+        sampleCount = BATTERY_ADC_SAMPLE_CAP;
+    }
+
+    uint16_t samples[BATTERY_ADC_SAMPLE_CAP] = {0};
+    for (size_t i = 0; i < sampleCount; i++) {
+        const int raw = analogRead(batteryPin);
+        const uint16_t clipped = raw < 0 ? 0 : (raw > 65535 ? 65535 : static_cast<uint16_t>(raw));
+        samples[i] = clipped;
+    }
+
+    const float trimmedAdc = app::algorithms::trimmedMeanU16(samples, sampleCount, BATTERY_ADC_TRIM_PERCENT);
+    const float adcVoltage = trimmedAdc * (3.3f / adcResolution);
+    const float rawVoltage = adcVoltage * voltageDivider;
+
+#if BATTERY_FILTER_ENABLED
+    const float filteredVoltage = voltageEma.update(rawVoltage);
+    ESP_LOGD(TAG, "battery voltage raw=%.3f filtered=%.3f", rawVoltage, filteredVoltage);
+    return filteredVoltage;
+#else
+    ESP_LOGD(TAG, "battery voltage raw=%.3f", rawVoltage);
+    return rawVoltage;
+#endif
 }
 
 int BatteryManager::calculateLevel(float voltage) {
