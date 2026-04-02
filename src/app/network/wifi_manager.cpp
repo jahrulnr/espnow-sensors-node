@@ -1,5 +1,7 @@
 #include "wifi_manager.h"
 
+#include "websocket_gateway.h"
+
 #include <app_config.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -90,6 +92,20 @@ void WifiManager::loop() {
 #if !ENABLE_WIFI_MODE
   return;
 #else
+  const bool connectedNow = WiFi.status() == WL_CONNECTED;
+  if (connectedNow != wasConnected) {
+#if ENABLE_WEBSOCKET_GATEWAY
+    websocketGateway.onWifiConnectionChanged(connectedNow);
+#endif
+    wasConnected = connectedNow;
+  }
+
+#if ENABLE_WEBSOCKET_GATEWAY
+  if (connectedNow) {
+    websocketGateway.loop();
+  }
+#endif
+
   if (mdnsStarted && WiFi.status() != WL_CONNECTED) {
     MDNS.end();
     mdnsStarted = false;

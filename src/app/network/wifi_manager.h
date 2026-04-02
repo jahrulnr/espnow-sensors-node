@@ -18,6 +18,7 @@ class WifiManager {
   bool connecting = false;
   bool loggedConnected = false;
   bool mdnsStarted = false;
+  bool wasConnected = false;
   uint32_t connectStartedMs = 0;
   char pendingSsid[33] = {0};
   char pendingPassword[65] = {0};
