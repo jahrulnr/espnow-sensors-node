@@ -24,8 +24,6 @@ class CameraHook : public IWebsocketHook {
 
   StreamClient streamClients[WEBSOCKET_STREAM_MAX_CLIENTS] = {};
   uint32_t cameraSequence = 0;
-  bool cameraInitAttempted = false;
-  bool cameraReady = false;
 
   StreamClient* findStreamClient(uint8_t clientId);
   StreamClient* ensureStreamClient(uint8_t clientId);

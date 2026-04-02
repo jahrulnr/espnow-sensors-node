@@ -52,7 +52,7 @@ bool MmwaveSensorModule::begin() {
   return started;
 #else
   started = false;
-  return false;
+  return true;
 #endif
 }
 

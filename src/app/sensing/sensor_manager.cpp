@@ -1,5 +1,6 @@
 #include "sensor_manager.h"
 
+#include "modules/camera_module.h"
 #include "modules/dht_module.h"
 #include "modules/mmwave_module.h"
 
@@ -9,6 +10,7 @@ namespace {
 
 DhtSensorModule dhtModule;
 MmwaveSensorModule mmwaveModule;
+CameraSensorModule cameraModule;
 
 }  // namespace
 
@@ -27,6 +29,7 @@ void SensorManager::ensureRegistryInitialized() {
   if (!initialized) {
     registerModule(dhtModule);
     registerModule(mmwaveModule);
+    registerModule(cameraModule);
     initialized = true;
   }
 }

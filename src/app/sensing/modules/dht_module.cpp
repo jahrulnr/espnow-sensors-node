@@ -34,7 +34,7 @@ bool DhtSensorModule::begin() {
   return started;
 #else
   started = false;
-  return false;
+  return true;
 #endif
 }
 
