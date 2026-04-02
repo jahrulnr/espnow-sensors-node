@@ -48,5 +48,6 @@
 - Payload format is isolated in encoder.
 - Network layer handles transport and link/master state only.
 - Adding a new sensor should not require changing `networkTask`.
+- Module discovery for master interoperability is exposed via ESP-NOW command/state contract.
 
 Indonesian version: [architecture_id.md](architecture_id.md)

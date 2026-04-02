@@ -10,6 +10,11 @@ class SensorManager {
  public:
   using SampleHandler = bool (*)(const SensorSample& sample, void* userData);
 
+  struct ModuleDescriptor {
+    const char* id = nullptr;
+    uint32_t featureBits = 0;
+  };
+
   static constexpr size_t MAX_MODULES = 8;
 
   bool beginAll();
@@ -19,6 +24,7 @@ class SensorManager {
   size_t collectBootSamples(SampleHandler handler, void* userData);
 
   uint32_t featureBits();
+  size_t listModules(ModuleDescriptor* out, size_t maxCount);
   size_t moduleCount() const { return moduleCountValue; }
 
  private:

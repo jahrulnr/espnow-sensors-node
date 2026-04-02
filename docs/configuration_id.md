@@ -21,6 +21,7 @@ Override lokal user (opsional):
 
 - DHT: aktif
 - mmWave: aktif
+- Servo output: nonaktif secara default
 - Pin mmWave:
   - TX: GPIO3
   - RX: GPIO4
@@ -29,6 +30,7 @@ Override lokal user (opsional):
 
 - DHT: aktif
 - mmWave: nonaktif (template profile)
+- Servo output: nonaktif secara default
 
 ### `BOARD_PROFILE_ESP32_CAM`
 
@@ -36,6 +38,7 @@ Override lokal user (opsional):
 - DHT: nonaktif (default)
 - mmWave: nonaktif (default)
 - Camera: aktif (mapping pin mengikuti referensi `esp32cam/pins.hpp` `AiThinker`)
+- Servo output: nonaktif secara default (disiapkan untuk named group `camera_pan_tilt`)
 - Pin camera:
   - D0: GPIO5
   - D1: GPIO18
@@ -81,6 +84,22 @@ Battery analog filtering:
 - `BATTERY_ADC_TRIM_PERCENT`
 - `BATTERY_VOLTAGE_EMA_ALPHA`
 
+## Servo Output (Opsional)
+
+Kontrol servo bersifat command-driven dari master dan mendukung routing named logical group.
+
+Macro penting di `include/app_config.h`:
+- `SERVO_OUTPUT_ENABLED`
+- `SERVO_GROUP_NAME`
+- `SERVO_GROUP_CHANNEL_COUNT`
+- `SERVO_MIN_DEG10`
+- `SERVO_MAX_DEG10`
+- `SERVO_DEFAULT_DEG10`
+
+Mapping pin di board profile:
+- `BOARD_PROFILE_SERVO_PIN_CH0`
+- `BOARD_PROFILE_SERVO_PIN_CH1`
+
 ## WiFi Mode (Opsional)
 
 Fitur WiFi STA untuk use-case lanjut (logging/dashboard/camera) dikontrol oleh macro:
@@ -111,6 +130,10 @@ Perilaku:
 - Saat koneksi berhasil, node publish hostname WiFi dan mDNS di `<hostname>.local`.
 - Server WebSocket hanya start setelah WiFi connected dan menyediakan hook berbasis `type` untuk request multipurpose.
 
+Kebijakan control/discovery:
+- Kontrol output dan discovery module diprioritaskan pada kontrak command/state ESP-NOW.
+- Jalur WebSocket dipertahankan terutama untuk kompatibilitas payload besar (misalnya frame/stream camera).
+
 Env build siap pakai:
 - `esp32-c3-super-mini-wifi` (set `ENABLE_WIFI_MODE=1`)
 - `esp32-cam-ai-thinker` (set `BOARD_PROFILE_ESP32_CAM` dan `ENABLE_WIFI_MODE=1`)
@@ -123,3 +146,5 @@ Sebelum coba link ke master:
 3. Tulis sample ke log.
 
 Jika master tidak terhubung, flow powersave tetap lanjut ke cycle sleep.
+
+English version: [configuration.md](configuration.md)

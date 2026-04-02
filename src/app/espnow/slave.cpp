@@ -70,6 +70,62 @@ void sendServoAckNow(SlaveNode& node, const app::actuation::ActuationResponse& r
   }
 }
 
+void sendModuleInfoNow(SlaveNode& node,
+                       uint8_t index,
+                       uint8_t total,
+                       app::espnow::state_binary::ModuleDomain domain,
+                       const char* id,
+                       uint32_t featureBits) {
+  app::espnow::state_binary::ModuleInfoState state = {};
+  app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::ModuleInfo);
+  state.index = index;
+  state.total = total;
+  state.domain = static_cast<uint8_t>(domain);
+  state.reserved0 = 0;
+  state.featureBits = featureBits;
+  if (id != nullptr) {
+    strncpy(state.id, id, sizeof(state.id) - 1);
+    state.id[sizeof(state.id) - 1] = '\0';
+  }
+
+  if (!node.sendStateBinary(&state, sizeof(state))) {
+    ESP_LOGW("espnow_slave", "Failed sending module info state");
+  }
+}
+
+void sendModuleListNow(SlaveNode& node) {
+  app::sensing::SensorManager::ModuleDescriptor sensorDescriptors[app::sensing::SensorManager::MAX_MODULES] = {};
+  app::actuation::ActuatorManager::ModuleDescriptor
+      actuatorDescriptors[app::actuation::ActuatorManager::MAX_MODULES] = {};
+
+  const size_t sensorCount = app::sensing::sensorManager.listModules(sensorDescriptors, app::sensing::SensorManager::MAX_MODULES);
+  const size_t actuatorCount =
+      app::actuation::actuatorManager.listModules(actuatorDescriptors, app::actuation::ActuatorManager::MAX_MODULES);
+  const size_t totalCount = sensorCount + actuatorCount;
+  const uint8_t total = totalCount > 255 ? 255 : static_cast<uint8_t>(totalCount);
+
+  uint8_t index = 0;
+  for (size_t i = 0; i < sensorCount && index < total; ++i) {
+    sendModuleInfoNow(node,
+                      index,
+                      total,
+                      app::espnow::state_binary::ModuleDomain::Sensor,
+                      sensorDescriptors[i].id,
+                      sensorDescriptors[i].featureBits);
+    index++;
+  }
+
+  for (size_t i = 0; i < actuatorCount && index < total; ++i) {
+    sendModuleInfoNow(node,
+                      index,
+                      total,
+                      app::espnow::state_binary::ModuleDomain::Actuator,
+                      actuatorDescriptors[i].id,
+                      actuatorDescriptors[i].featureBits);
+    index++;
+  }
+}
+
 }  // namespace
 
 static const char* TAG = "espnow_slave";
@@ -529,6 +585,13 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
           app::actuation::ActuationResponse response = {};
           app::actuation::actuatorManager.handleRequest(request, response);
           sendServoAckNow(*activeInstance, response);
+          break;
+        }
+        if (app::espnow::state_binary::hasTypeAndSize(payload,
+                                                      payloadSize,
+                                                      app::espnow::state_binary::Type::ModuleListReq,
+                                                      sizeof(app::espnow::state_binary::ModuleListReqCommand))) {
+          sendModuleListNow(*activeInstance);
           break;
         }
       } else {

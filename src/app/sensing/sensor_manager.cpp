@@ -128,4 +128,28 @@ uint32_t SensorManager::featureBits() {
   return bits;
 }
 
+size_t SensorManager::listModules(ModuleDescriptor* out, size_t maxCount) {
+  ensureRegistryInitialized();
+
+  size_t emitted = 0;
+  for (size_t i = 0; i < moduleCountValue; ++i) {
+    if (modules[i] == nullptr) {
+      continue;
+    }
+
+    const uint32_t bits = modules[i]->featureBit();
+    if (bits == 0) {
+      continue;
+    }
+
+    if (out != nullptr && emitted < maxCount) {
+      out[emitted].id = modules[i]->id();
+      out[emitted].featureBits = bits;
+    }
+    emitted++;
+  }
+
+  return emitted;
+}
+
 }  // namespace app::sensing

@@ -92,6 +92,8 @@ Minimum master validation:
 - `12 = WifiCredentials` (COMMAND payload)
 - `13 = ServoControl` (COMMAND payload)
 - `14 = ServoAck` (STATE payload)
+- `15 = ModuleListReq` (COMMAND payload)
+- `16 = ModuleInfo` (STATE payload)
 
 ## Payload Structures and Semantics
 
@@ -153,6 +155,8 @@ Feature bits used by node:
 - `bit7 (1<<7) = FeatureMmwave`
 - `bit8 (1<<8) = FeatureWifiSta` (WiFi command capability, enabled when WiFi mode build is enabled)
 - `bit9 (1<<9) = FeatureActuationServo`
+- `bit4 (1<<4) = FeatureCameraJpeg`
+- `bit5 (1<<5) = FeatureCameraStream`
 
 Master should treat other bits as unknown/forward-compatible.
 
@@ -200,7 +204,7 @@ Node response:
 1. sends `IdentityState`
 2. sends `FeaturesState`
 
-Commands other than `IdentityReq`, `WifiCredentials`, and `ServoControl` are currently ignored.
+Commands other than `IdentityReq`, `WifiCredentials`, `ServoControl`, and `ModuleListReq` are currently ignored.
 
 ### WifiCredentials (`Type=12`)
 
@@ -238,6 +242,38 @@ Node behavior:
 - Delegates command to modular actuator manager.
 - Returns one `ServoAckState` as `PacketType::STATE` payload.
 - If command fails validation (group/channel/range/driver), `ok=0` and `status` explains reason.
+
+### ModuleListReq (`Type=15`)
+
+```c
+struct ModuleListReqCommand {
+  Header header;
+};
+```
+
+Node behavior:
+- Enumerates available modules from sensing and actuation managers.
+- Sends one or more `ModuleInfo` states.
+- Ordering is deterministic: all sensor modules first, then actuator modules.
+
+### ModuleInfo (`Type=16`)
+
+```c
+struct ModuleInfoState {
+  Header header;
+  uint8_t index;      // 0-based index in current response sequence
+  uint8_t total;      // total count in this response sequence
+  uint8_t domain;     // 1=sensor, 2=actuator
+  uint8_t reserved0;
+  uint32_t featureBits;
+  char id[16];        // module id string (e.g. "dht", "mmwave", "camera", "servo")
+};
+```
+
+Master parsing guidance:
+- Group entries by frame sequence context and `total` value.
+- Treat unknown `domain` values as forward-compatible and ignore safely.
+- `featureBits` may contain multiple bits for one module (for example camera JPEG + stream).
 
 ## Runtime Sequence (Practical for Master)
 

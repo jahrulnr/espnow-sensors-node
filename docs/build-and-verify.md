@@ -48,11 +48,27 @@ pio run -e esp32-c3-super-mini -e esp32-c3-super-mini-deep -e esp32-c3-super-min
 
 - Build matrix across profiles must succeed.
 - Boot log must show one initial sample per active module.
+- Boot log should not report unexpected actuator initialization failures when profiles disable outputs.
 - In powersave mode:
   - Deep sleep follows default `10s` interval
   - Light sleep follows default `300ms` interval
 - Payload contract is guarded by static checks in:
   - `src/app/espnow/contract_checks.cpp`
+
+## ESP-NOW Control + Discovery Validation (Recommended)
+
+Prerequisites:
+- Master has linked to node (`HELLO` / `HEARTBEAT` flow healthy).
+
+Validate discovery:
+- Send `PacketType::COMMAND` with `Type=IdentityReq` and confirm node replies with `IdentityState` and `FeaturesState`.
+- Send `PacketType::COMMAND` with `Type=ModuleListReq` and confirm node replies with one or more `ModuleInfo` states.
+- Confirm `ModuleInfo.index` increments from `0` and `ModuleInfo.total` remains consistent for one sequence.
+
+Validate control (when servo output is enabled in profile):
+- Send `PacketType::COMMAND` with `Type=ServoControl`.
+- Confirm node replies with `ServoAck` state.
+- Verify error behavior for invalid group/channel/range returns `ok=0` and proper `status` code.
 
 ## WiFi Command Validation (Optional)
 

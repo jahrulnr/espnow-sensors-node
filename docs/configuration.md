@@ -130,6 +130,10 @@ Behavior:
 - When connected, node publishes WiFi hostname and mDNS as `<hostname>.local`.
 - WebSocket server starts only after WiFi is connected and provides type-based hooks for multipurpose requests.
 
+Control/discovery policy:
+- Output control and module discovery are prioritized on ESP-NOW command/state contract.
+- WebSocket path is retained primarily for large payload compatibility (for example camera frame/stream transport).
+
 Ready build environment:
 - `esp32-c3-super-mini-wifi` (sets `ENABLE_WIFI_MODE=1`)
 - `esp32-cam-ai-thinker` (sets `BOARD_PROFILE_ESP32_CAM` and `ENABLE_WIFI_MODE=1`)

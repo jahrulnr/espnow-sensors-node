@@ -17,6 +17,8 @@ static_assert(static_cast<uint8_t>(state_binary::Type::Mmwave) == 11, "Mmwave ty
 static_assert(static_cast<uint8_t>(state_binary::Type::WifiCredentials) == 12, "WifiCredentials type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::ServoControl) == 13, "ServoControl type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::ServoAck) == 14, "ServoAck type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::ModuleListReq) == 15, "ModuleListReq type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::ModuleInfo) == 16, "ModuleInfo type changed");
 
 static_assert(sizeof(state_binary::Header) == 4, "state_binary::Header size changed");
 static_assert(sizeof(state_binary::SensorState) <= MAX_PAYLOAD_SIZE, "SensorState exceeds ESP-NOW payload");
@@ -28,6 +30,10 @@ static_assert(sizeof(state_binary::ServoControlCommand) <= MAX_PAYLOAD_SIZE,
               "ServoControlCommand exceeds ESP-NOW payload");
 static_assert(sizeof(state_binary::ServoAckState) <= MAX_PAYLOAD_SIZE,
               "ServoAckState exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::ModuleListReqCommand) <= MAX_PAYLOAD_SIZE,
+              "ModuleListReqCommand exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::ModuleInfoState) <= MAX_PAYLOAD_SIZE,
+              "ModuleInfoState exceeds ESP-NOW payload");
 
 static_assert(std::is_trivially_copyable<state_binary::SensorState>::value,
               "SensorState must remain trivially copyable");
@@ -39,5 +45,9 @@ static_assert(std::is_trivially_copyable<state_binary::ServoControlCommand>::val
               "ServoControlCommand must remain trivially copyable");
 static_assert(std::is_trivially_copyable<state_binary::ServoAckState>::value,
               "ServoAckState must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::ModuleListReqCommand>::value,
+              "ModuleListReqCommand must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::ModuleInfoState>::value,
+              "ModuleInfoState must remain trivially copyable");
 
 }  // namespace app::espnow

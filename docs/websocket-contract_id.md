@@ -2,6 +2,10 @@
 
 Dokumen ini mendefinisikan kontrak WebSocket multipurpose untuk client yang berinteraksi dengan node lewat WiFi.
 
+Catatan scope control/discovery:
+- Kontrak utama untuk control dan discovery module ada di ESP-NOW.
+- WebSocket gateway diprioritaskan untuk kompatibilitas payload besar (misalnya frame/stream camera).
+
 ## Ketersediaan
 
 WebSocket gateway tersedia hanya jika:

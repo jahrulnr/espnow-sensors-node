@@ -48,11 +48,27 @@ pio run -e esp32-c3-super-mini -e esp32-c3-super-mini-deep -e esp32-c3-super-min
 
 - Build matrix lintas profile harus sukses.
 - Boot log harus menampilkan 1 sample awal per module aktif.
+- Boot log sebaiknya tidak menampilkan kegagalan init actuator yang tidak diharapkan saat output memang dinonaktifkan di profile.
 - Pada mode powersave:
   - Deep sleep sesuai interval default `10s`
   - Light sleep sesuai interval default `300ms`
 - Contract payload dijaga oleh static check di:
   - `src/app/espnow/contract_checks.cpp`
+
+## Validasi ESP-NOW Control + Discovery (Disarankan)
+
+Prasyarat:
+- Master sudah linked ke node (flow `HELLO` / `HEARTBEAT` sehat).
+
+Validasi discovery:
+- Kirim `PacketType::COMMAND` dengan `Type=IdentityReq` lalu pastikan node membalas `IdentityState` dan `FeaturesState`.
+- Kirim `PacketType::COMMAND` dengan `Type=ModuleListReq` lalu pastikan node membalas satu atau lebih `ModuleInfo`.
+- Pastikan `ModuleInfo.index` naik dari `0` dan `ModuleInfo.total` konsisten dalam satu sequence.
+
+Validasi control (saat servo output di-enable di profile):
+- Kirim `PacketType::COMMAND` dengan `Type=ServoControl`.
+- Pastikan node membalas state `ServoAck`.
+- Verifikasi perilaku error untuk group/channel/range invalid: `ok=0` dan `status` sesuai.
 
 ## Validasi WiFi Command (Opsional)
 
@@ -75,3 +91,5 @@ Expected:
 - Log menampilkan websocket gateway aktif pada port yang dikonfigurasi.
 - Kirim request JSON dengan envelope `{"type":"system","data":{"state":"hooks"}}` mendapat response envelope JSON.
 - Kirim `{"type":"camera","data":{"state":"specs"}}` mendapat response JSON spesifikasi camera.
+
+English version: [build-and-verify.md](build-and-verify.md)

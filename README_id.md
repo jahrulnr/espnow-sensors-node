@@ -6,20 +6,20 @@
 ![WiFi](https://img.shields.io/badge/WiFi-command--driven-blue)
 [![Docs](https://img.shields.io/badge/docs-wiki-0ea5e9)](docs/README_id.md)
 
-Node sensor modular berbasis ESP32 untuk skenario multi-purpose sensors collector lintas board/profile.
+Node modular berbasis ESP32 untuk telemetri dan kontrol perangkat lintas board/profile.
 
 ## Proyek Ini Untuk Apa
 
 Tujuan utama proyek ini:
-- Menjadikan node sensor fleksibel per board.
-- Kombinasi sensor bisa diganti lewat konfigurasi profile.
+- Menjadikan node fleksibel per board.
+- Kombinasi module sensing dan control bisa diganti lewat konfigurasi profile.
 - Jalur `boot`, `input`, dan `network` tetap terpisah supaya tidak gemuk.
 
 Contoh skenario:
 - ESP32-C3: `mmwave + dht`
 - ESP32-S3: `dht`
-- ESP32-CAM (AI Thinker): `profile camera-ready + mode WiFi`
-- Board lain: tinggal tambah profile dan module sensor.
+- ESP32-CAM (AI Thinker): `profile camera-ready + control ESP-NOW-first`
+- Board lain: tinggal tambah profile dan module.
 
 ## Mulai Dari Sini
 
@@ -32,6 +32,7 @@ Kalau kamu ingin:
 - Integrasi client lewat WebSocket gateway: [docs/websocket-contract_id.md](docs/websocket-contract_id.md)
 - Tambah WebSocket hook custom: [docs/add-websocket-hook_id.md](docs/add-websocket-hook_id.md)
 - Tambah jenis sensor baru: [docs/add-sensor-module_id.md](docs/add-sensor-module_id.md)
+- Discovery module slave via ESP-NOW: [docs/api-contract_id.md](docs/api-contract_id.md)
 
 ## Catatan
 

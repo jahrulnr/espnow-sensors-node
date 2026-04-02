@@ -2,6 +2,10 @@
 
 This document defines the multipurpose WebSocket contract for clients that interact with the node over WiFi.
 
+Control/discovery scope note:
+- Primary control and module discovery contracts are on ESP-NOW.
+- WebSocket gateway is primarily used for large-payload compatibility use cases (for example camera frames/streams).
+
 ## Availability
 
 WebSocket gateway is available only when:

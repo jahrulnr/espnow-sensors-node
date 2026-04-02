@@ -90,6 +90,10 @@ Validasi minimum di master:
 - `10 = IdentityReq` (COMMAND payload)
 - `11 = Mmwave`
 - `12 = WifiCredentials` (COMMAND payload)
+- `13 = ServoControl` (COMMAND payload)
+- `14 = ServoAck` (STATE payload)
+- `15 = ModuleListReq` (COMMAND payload)
+- `16 = ModuleInfo` (STATE payload)
 
 ## Payload Structures Dan Semantik
 
@@ -150,6 +154,9 @@ Feature bits yang dipakai node:
 - `bit1 (1<<1) = FeatureSensor` (DHT)
 - `bit7 (1<<7) = FeatureMmwave`
 - `bit8 (1<<8) = FeatureWifiSta` (kapabilitas WiFi command, aktif jika build enable WiFi mode)
+- `bit9 (1<<9) = FeatureActuationServo`
+- `bit4 (1<<4) = FeatureCameraJpeg`
+- `bit5 (1<<5) = FeatureCameraStream`
 
 Master harus treat bit lain sebagai unknown/forward-compatible.
 
@@ -164,6 +171,21 @@ struct MmwaveState {
   uint16_t frameCount;
   uint16_t byteCount;
 };
+
+### ServoAck (`Type=14`)
+
+```c
+struct ServoAckState {
+  Header header;
+  uint8_t ok;       // 0/1
+  uint8_t status;   // 0=ok, 1=disabled, 2=invalidGroup, 3=invalidChannel, 4=invalidValue, 5=driverError
+  char group[16];   // named logical group
+  uint8_t channel;  // channel index di dalam group
+  uint16_t targetDeg10;
+  uint16_t appliedDeg10;
+  uint32_t timestampMs;
+};
+```
 ```
 
 ## COMMAND Contract
@@ -182,7 +204,7 @@ Respons node:
 1. kirim `IdentityState`
 2. kirim `FeaturesState`
 
-Command selain `IdentityReq` dan `WifiCredentials` saat ini diabaikan.
+Command selain `IdentityReq`, `WifiCredentials`, `ServoControl`, dan `ModuleListReq` saat ini diabaikan.
 
 ### WifiCredentials (`Type=12`)
 
@@ -204,13 +226,64 @@ Catatan encoding field:
 - `ssid`/`password` boleh null-terminated atau buffer terisi parsial.
 - Node akan memotong panjang ke kapasitas field (`32`/`64`) bila lebih panjang.
 
+### ServoControl (`Type=13`)
+
+```c
+struct ServoControlCommand {
+  Header header;
+  char group[16];   // named logical group, contoh: "camera_pan_tilt"
+  uint8_t channel;  // index channel servo dalam group
+  uint16_t targetDeg10;
+  uint16_t transitionMs; // metadata untuk policy transisi/smoothing
+};
+```
+
+Perilaku node:
+- Mendelegasikan command ke actuator manager modular.
+- Mengirim satu `ServoAckState` sebagai payload `PacketType::STATE`.
+- Jika validasi gagal (group/channel/range/driver), `ok=0` dan `status` berisi penyebab.
+
+### ModuleListReq (`Type=15`)
+
+```c
+struct ModuleListReqCommand {
+  Header header;
+};
+```
+
+Perilaku node:
+- Enumerasi module yang tersedia dari manager sensing dan actuation.
+- Mengirim satu atau lebih `ModuleInfo`.
+- Urutan deterministik: semua sensor dulu, lalu actuator.
+
+### ModuleInfo (`Type=16`)
+
+```c
+struct ModuleInfoState {
+  Header header;
+  uint8_t index;      // index 0-based di sequence respons saat ini
+  uint8_t total;      // total entry pada sequence respons saat ini
+  uint8_t domain;     // 1=sensor, 2=actuator
+  uint8_t reserved0;
+  uint32_t featureBits;
+  char id[16];        // id module (misalnya "dht", "mmwave", "camera", "servo")
+};
+```
+
+Panduan parsing di master:
+- Kelompokkan entry berdasarkan konteks sequence dan nilai `total`.
+- Nilai `domain` unknown harus diperlakukan forward-compatible dan diabaikan dengan aman.
+- `featureBits` dapat berisi lebih dari satu bit untuk satu module (contoh camera JPEG + stream).
+
 ## Runtime Sequence (Praktis Untuk Master)
 
 Urutan umum setelah node linked:
 1. Node kirim `IdentityState` dan `FeaturesState`.
 2. Node kirim sample sensor (`SensorState`, `MmwaveState`) sesuai interval/module.
 3. Master bisa kirim `IdentityReq` kapan pun untuk re-sync metadata node.
-4. Master kirim `HEARTBEAT` periodik untuk menjaga link.
+4. Master bisa kirim `ServoControl` dan menerima `ServoAck` sebagai respons runtime state.
+5. Master bisa kirim `ModuleListReq` untuk discovery module tersedia via ESP-NOW.
+6. Master kirim `HEARTBEAT` periodik untuk menjaga link.
 
 Pada mode powersave:
 - Tiap wake cycle node menunggu link sampai timeout.
@@ -235,3 +308,5 @@ Pada mode powersave:
 - `src/app/espnow/contract_checks.cpp`
 
 Kontrak API WebSocket didokumentasikan terpisah di [websocket-contract_id.md](websocket-contract_id.md).
+
+English version: [api-contract.md](api-contract.md)

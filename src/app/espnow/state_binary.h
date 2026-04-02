@@ -22,6 +22,13 @@ enum class Type : uint8_t {
   WifiCredentials = 12,
   ServoControl = 13,
   ServoAck = 14,
+  ModuleListReq = 15,
+  ModuleInfo = 16,
+};
+
+enum class ModuleDomain : uint8_t {
+  Sensor = 1,
+  Actuator = 2,
 };
 
 enum Feature : uint32_t {
@@ -133,6 +140,20 @@ struct __attribute__((packed)) ServoAckState {
   uint16_t targetDeg10;
   uint16_t appliedDeg10;
   uint32_t timestampMs;
+};
+
+struct __attribute__((packed)) ModuleListReqCommand {
+  Header header;
+};
+
+struct __attribute__((packed)) ModuleInfoState {
+  Header header;
+  uint8_t index;
+  uint8_t total;
+  uint8_t domain;
+  uint8_t reserved0;
+  uint32_t featureBits;
+  char id[16];
 };
 
 inline void initHeader(Header& header, Type type) {
