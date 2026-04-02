@@ -8,18 +8,28 @@
 
 Node modular berbasis ESP32 untuk telemetri dan kontrol perangkat lintas board/profile.
 
-## Proyek Ini Untuk Apa
+## Untuk Siapa Proyek Ini
+
+Proyek ini cocok untuk:
+
+- **Smart home builder** — pasang node sensor + aktuator di berbagai sudut rumah, dikontrol dari satu master lewat ESP-NOW tanpa bergantung pada layanan cloud.
+- **Sistem IoT berbasis AI agent** — slave mengekspos identitas dan daftar module-nya via protokol ESP-NOW, sehingga AI agent di sisi master dapat menemukan kapabilitas node secara dinamis dan langsung bertindak (contoh: "putar servo ke 90°", "ada gerakan di ruang 2?").
+- **Maker dan penghobi embedded** — ganti board target atau kombinasi module sensor/aktuator cukup lewat profile config, tanpa perlu menulis ulang firmware.
+- **Skenario multi-node** — jalankan beberapa slave dengan profile berbeda, semuanya melapor ke satu master menggunakan kontrak protokol binary yang sama.
+
+## Apa Tujuan Proyek Ini
 
 Tujuan utama proyek ini:
-- Menjadikan node fleksibel per board.
-- Kombinasi module sensing dan control bisa diganti lewat konfigurasi profile.
-- Jalur `boot`, `input`, dan `network` tetap terpisah supaya tidak gemuk.
+- Membuat node fleksibel di berbagai board target.
+- Kombinasi module sensing dan kontrol bisa diganti lewat konfigurasi profile.
+- Jalur `boot`, `input`, dan `network` tetap terpisah agar mudah dirawat dan dikembangkan.
+- Menyediakan kontrak binary yang stabil agar integrasi sisi master dapat menemukan dan berinteraksi dengan node slave mana pun tanpa perlu hardcode kapabilitas.
 
-Contoh skenario:
-- ESP32-C3: `mmwave + dht`
-- ESP32-S3: `dht`
-- ESP32-CAM (AI Thinker): `profile camera-ready + control ESP-NOW-first`
-- Board lain: tinggal tambah profile dan module.
+Contoh deployment:
+- ESP32-C3: `mmwave + dht` → node sensor kehadiran + suhu/kelembaban
+- ESP32-S3: `dht` → node iklim ringan dengan deep sleep
+- ESP32-CAM (AI Thinker): `camera + kontrol ESP-NOW-first` → node kamera dengan servo pan/tilt
+- Board lainnya: tambah profile, tambah module, flash dan langsung jalan.
 
 ## Mulai Dari Sini
 

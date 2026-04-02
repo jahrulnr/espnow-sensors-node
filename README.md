@@ -8,18 +8,28 @@
 
 A modular ESP32 field node for telemetry and device control across boards and profiles.
 
+## Who This Is For
+
+This project is designed for:
+
+- **Smart home builders** — deploy sensor + actuator nodes around the house, controlled from a central master over ESP-NOW without relying on cloud services.
+- **AI agent IoT systems** — the slave exposes its identity and module inventory via ESP-NOW protocol, so an AI agent on the master side can discover capabilities dynamically and act on them (e.g. "turn servo to 90°", "is there motion in room 2?").
+- **Embedded hobbyists and makers** — swap board targets, swap sensor/actuator modules via profile config, no firmware rewrite needed.
+- **Multi-node environments** — run multiple slaves with different profiles, all reporting to one master using the same binary protocol contract.
+
 ## What This Project Is For
 
 Main goals of this project:
 - Make the node flexible across board targets.
 - Allow sensing and control module combinations to be switched via profile configuration.
 - Keep `boot`, `input`, and `network` pipelines separated and maintainable.
+- Provide a stable binary contract so master-side integrations can discover and interact with any slave node without hardcoding capabilities.
 
-Example scenarios:
-- ESP32-C3: `mmwave + dht`
-- ESP32-S3: `dht`
-- ESP32-CAM (AI Thinker): `camera-ready profile + ESP-NOW-first control`
-- Other boards: just add a board profile and modules.
+Example deployments:
+- ESP32-C3: `mmwave + dht` → presence + climate sensor node
+- ESP32-S3: `dht` → lightweight climate node with deep sleep
+- ESP32-CAM (AI Thinker): `camera + ESP-NOW-first control` → vision node with pan/tilt servo
+- Any board: add a profile, add modules, flash and go.
 
 ## Start Here
 

@@ -282,7 +282,8 @@ Typical order after node is linked:
 2. Node sends sensor samples (`SensorState`, `MmwaveState`) according to interval/module.
 3. Master can send `IdentityReq` anytime to re-sync node metadata.
 4. Master can send `ServoControl` and receive `ServoAck` runtime state response.
-5. Master sends periodic `HEARTBEAT` to keep link alive.
+5. Master can send `ModuleListReq` to discover available modules via ESP-NOW.
+6. Master sends periodic `HEARTBEAT` to keep link alive.
 
 In powersave mode:
 - Every wake cycle, node waits for link until timeout.

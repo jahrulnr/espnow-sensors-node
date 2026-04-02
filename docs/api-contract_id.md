@@ -298,6 +298,7 @@ Pada mode powersave:
 4. Untuk `STATE` binary:
    - validasi magic/version/type/size
    - decode sesuai tabel struct di atas
+5. Type tidak dikenal atau feature bit tidak dikenal: abaikan, jangan crash.
 5. Unknown type/unknown feature bit: ignore, jangan crash.
 
 ## Sumber Kontrak Di Kode
