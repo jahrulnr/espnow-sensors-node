@@ -111,24 +111,30 @@ bool sendModuleListNow(SlaveNode& node, const char* logTag) {
   bool sentAny = false;
   uint8_t index = 0;
   for (size_t i = 0; i < sensorCount && index < total; ++i) {
-    sentAny = sendModuleInfoNow(node,
-                                index,
-                                total,
-                                app::espnow::state_binary::ModuleDomain::Sensor,
-                                sensorDescriptors[i].id,
-                                sensorDescriptors[i].featureBits,
-                                logTag) || sentAny;
+    if (!sendModuleInfoNow(node,
+                           index,
+                           total,
+                           app::espnow::state_binary::ModuleDomain::Sensor,
+                           sensorDescriptors[i].id,
+                           sensorDescriptors[i].featureBits,
+                           logTag)) {
+      return sentAny;
+    }
+    sentAny = true;
     index++;
   }
 
   for (size_t i = 0; i < actuatorCount && index < total; ++i) {
-    sentAny = sendModuleInfoNow(node,
-                                index,
-                                total,
-                                app::espnow::state_binary::ModuleDomain::Actuator,
-                                actuatorDescriptors[i].id,
-                                actuatorDescriptors[i].featureBits,
-                                logTag) || sentAny;
+    if (!sendModuleInfoNow(node,
+                           index,
+                           total,
+                           app::espnow::state_binary::ModuleDomain::Actuator,
+                           actuatorDescriptors[i].id,
+                           actuatorDescriptors[i].featureBits,
+                           logTag)) {
+      return sentAny;
+    }
+    sentAny = true;
     index++;
   }
 

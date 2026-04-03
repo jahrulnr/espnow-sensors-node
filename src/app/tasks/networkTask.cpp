@@ -13,6 +13,7 @@
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 
 namespace app::tasks {
 
@@ -37,6 +38,17 @@ TaskHandle_t networkTaskHandle = nullptr;
 #if !ENABLE_POWERSAVE
 QueueHandle_t outgoingQueue = nullptr;
 #endif
+
+uint32_t withJitterMs(uint32_t baseMs, uint32_t jitterMaxMs) {
+  if (jitterMaxMs == 0) {
+    return baseMs;
+  }
+  return baseMs + (esp_random() % (jitterMaxMs + 1U));
+}
+
+void delayWithJitterMs(uint32_t baseMs, uint32_t jitterMaxMs) {
+  vTaskDelay(pdMS_TO_TICKS(withJitterMs(baseMs, jitterMaxMs)));
+}
 
 void sendIdentityStateNow() {
 #if NODE_SEND_IDENTITY_STATE
@@ -117,7 +129,7 @@ bool waitForMasterLink(uint32_t timeoutMs) {
     if (app::espnow::espnowSlave.isMasterLinked()) {
       return true;
     }
-    vTaskDelay(pdMS_TO_TICKS(NODE_MASTER_POLL_INTERVAL_MS));
+    delayWithJitterMs(NODE_MASTER_POLL_INTERVAL_MS, NODE_MASTER_POLL_JITTER_MAX_MS);
   }
 
   return app::espnow::espnowSlave.isMasterLinked();
@@ -128,11 +140,11 @@ bool sendIdentityAndFeatures() {
   for (uint32_t i = 0; i < NODE_BOOT_ANNOUNCE_REPEATS; ++i) {
     sendIdentityStateNow();
     sentAny = true;
-    vTaskDelay(pdMS_TO_TICKS(20));
+    delayWithJitterMs(20, NODE_TX_JITTER_MAX_MS);
 
     sendFeaturesStateNow();
     sentAny = true;
-    vTaskDelay(pdMS_TO_TICKS(20));
+    delayWithJitterMs(20, NODE_TX_JITTER_MAX_MS);
 
     if (!app::espnow::espnowSlave.sendModuleListSnapshot()) {
       ESP_LOGW(TAG, "Failed sending proactive module list snapshot (attempt %u)", static_cast<unsigned>(i + 1));
@@ -141,11 +153,11 @@ bool sendIdentityAndFeatures() {
     }
 
     if (i + 1 < NODE_BOOT_ANNOUNCE_REPEATS) {
-      vTaskDelay(pdMS_TO_TICKS(NODE_BOOT_ANNOUNCE_GAP_MS));
+      delayWithJitterMs(NODE_BOOT_ANNOUNCE_GAP_MS, NODE_TX_JITTER_MAX_MS);
     }
   }
 
-  vTaskDelay(pdMS_TO_TICKS(20));
+  delayWithJitterMs(20, NODE_TX_JITTER_MAX_MS);
   return sentAny;
 }
 
@@ -173,14 +185,14 @@ bool sendPowerSaveSample(const app::sensing::SensorSample& sample, void* userDat
     context->sent++;
   }
 
-  vTaskDelay(pdMS_TO_TICKS(NODE_POST_SEND_SETTLE_MS));
+  delayWithJitterMs(NODE_POST_SEND_SETTLE_MS, NODE_TX_JITTER_MAX_MS);
   return true;
 }
 
 void waitForIdleSleepWindow() {
   while (!app::power::canEnterSleep(millis(), NODE_SLEEP_IDLE_THRESHOLD_MS)) {
     app::espnow::espnowSlave.loop();
-    vTaskDelay(pdMS_TO_TICKS(NODE_MASTER_POLL_INTERVAL_MS));
+    delayWithJitterMs(NODE_MASTER_POLL_INTERVAL_MS, NODE_MASTER_POLL_JITTER_MAX_MS);
   }
 }
 
@@ -191,7 +203,7 @@ size_t sendPowerSaveBootSamples() {
   for (uint32_t i = 0; i < NODE_BOOT_SAMPLE_REPEATS; ++i) {
     app::sensing::sensorManager.collectBootSamples(sendPowerSaveSample, &context);
     if (i + 1 < NODE_BOOT_SAMPLE_REPEATS) {
-      vTaskDelay(pdMS_TO_TICKS(NODE_POST_SEND_SETTLE_MS));
+      delayWithJitterMs(NODE_POST_SEND_SETTLE_MS, NODE_TX_JITTER_MAX_MS);
     }
   }
   return context.sent;

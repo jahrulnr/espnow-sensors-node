@@ -62,6 +62,20 @@ bool SlaveNode::begin(uint8_t channel, bool enablePipeline) {
     }
   }
 
+#if NODE_ESPNOW_SET_PEER_RATE
+  {
+    esp_now_rate_config_t config = {};
+    config.phymode = static_cast<wifi_phy_mode_t>(NODE_ESPNOW_PEER_PHY_MODE);
+    config.rate = static_cast<wifi_phy_rate_t>(NODE_ESPNOW_PEER_PHY_RATE);
+    config.ersu = NODE_ESPNOW_PEER_RATE_ERSU != 0;
+    config.dcm = NODE_ESPNOW_PEER_RATE_DCM != 0;
+    const esp_err_t rateErr = esp_now_set_peer_rate_config(kBroadcastMac, &config);
+    if (rateErr != ESP_OK && rateErr != ESP_ERR_ESPNOW_NOT_FOUND) {
+      ESP_LOGW(kSlaveLogTag, "Failed set broadcast rate: %s", esp_err_to_name(rateErr));
+    }
+  }
+#endif
+
   started = true;
   lastHelloMs = millis();
   lastScanMs = millis();
@@ -83,8 +97,11 @@ void SlaveNode::loop() {
   const uint32_t now = millis();
   pruneMasters(now);
 
-  // Keep scanning continuously so the slave can discover masters on other channels.
-  if (now - lastScanMs >= kChannelScanIntervalMs && !app::network::wifiManager.isChannelLocked()) {
+  // While master is linked, keep channel stable to protect TX/ACK timing.
+  // Resume scan only after link is lost so reacquisition still works.
+  if (masterCount == 0 &&
+      now - lastScanMs >= kChannelScanIntervalMs &&
+      !app::network::wifiManager.isChannelLocked()) {
     scanNextChannel();
     lastScanMs = now;
   }

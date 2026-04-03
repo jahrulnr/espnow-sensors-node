@@ -43,6 +43,7 @@ RTC_DATA_ATTR uint8_t gWakeCyclesSinceFullScan = 0;
 RTC_DATA_ATTR uint8_t gCachedScanChannels[CACHE_MAX_ENTRIES] = {0};
 RTC_DATA_ATTR uint8_t gCachedScanChannelCount = 0;
 RTC_DATA_ATTR uint8_t gCachedScanIndex = 0;
+RTC_DATA_ATTR uint8_t gCachedScanHopCount = 0;
 RTC_DATA_ATTR bool gUseCachedScanMode = false;
 
 uint8_t clampChannel(uint8_t channel) {
@@ -167,6 +168,7 @@ bool appendChannelIfMissing(uint8_t* channels, size_t& count, uint8_t channel) {
 void buildCachedScanPlan(bool useCachedScanOnly) {
   gCachedScanChannelCount = 0;
   gCachedScanIndex = 0;
+  gCachedScanHopCount = 0;
   gUseCachedScanMode = false;
   memset(gCachedScanChannels, 0, sizeof(gCachedScanChannels));
 
@@ -259,7 +261,10 @@ uint8_t chooseInitialScanChannel(uint8_t requestedChannel, const char* logTag) {
 
   if (gCachedScanChannelCount > 0) {
     const uint8_t startChannel = gCachedScanChannels[0];
-    ESP_LOGI(logTag, "Using cached scan channel %u for fast wake link", startChannel);
+    ESP_LOGI(logTag,
+             "Using cached scan channel %u for fast wake link (max hops=%u)",
+             startChannel,
+             static_cast<unsigned>(NODE_MASTER_CACHE_FAST_SCAN_MAX_HOPS));
     return startChannel;
   }
 
@@ -268,9 +273,22 @@ uint8_t chooseInitialScanChannel(uint8_t requestedChannel, const char* logTag) {
 
 uint8_t chooseNextScanChannel(uint8_t currentChannel) {
   if (gUseCachedScanMode && gCachedScanChannelCount > 0) {
-    const uint8_t nextChannel = gCachedScanChannels[gCachedScanIndex];
-    gCachedScanIndex = static_cast<uint8_t>((gCachedScanIndex + 1) % gCachedScanChannelCount);
-    return nextChannel;
+    if (NODE_MASTER_CACHE_FAST_SCAN_MAX_HOPS > 0 &&
+        gCachedScanHopCount >= NODE_MASTER_CACHE_FAST_SCAN_MAX_HOPS) {
+      gUseCachedScanMode = false;
+      gCachedScanIndex = 0;
+    } else {
+      const uint8_t nextChannel = gCachedScanChannels[gCachedScanIndex];
+      gCachedScanIndex = static_cast<uint8_t>((gCachedScanIndex + 1) % gCachedScanChannelCount);
+      if (gCachedScanHopCount < 255) {
+        gCachedScanHopCount++;
+      }
+      return nextChannel;
+    }
+  }
+
+  if (gCachedScanHopCount > 0) {
+    gCachedScanHopCount = 0;
   }
 
   if (currentChannel < MIN_SCAN_CHANNEL || currentChannel >= MAX_SCAN_CHANNEL) {

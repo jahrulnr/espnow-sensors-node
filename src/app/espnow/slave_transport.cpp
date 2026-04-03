@@ -12,6 +12,49 @@
 
 namespace app::espnow {
 
+namespace {
+
+uint32_t gNoMemBackoffUntilMs = 0;
+uint32_t gNoMemLastWarnMs = 0;
+
+uint32_t noMemBackoffMs() {
+  if (NODE_ESPNOW_NO_MEM_BACKOFF_JITTER_MS == 0) {
+    return NODE_ESPNOW_NO_MEM_BACKOFF_MS;
+  }
+  return NODE_ESPNOW_NO_MEM_BACKOFF_MS + (esp_random() % (NODE_ESPNOW_NO_MEM_BACKOFF_JITTER_MS + 1U));
+}
+
+void applyPeerRateConfig(const uint8_t mac[6]) {
+#if NODE_ESPNOW_SET_PEER_RATE
+  if (mac == nullptr) {
+    return;
+  }
+
+  esp_now_rate_config_t config = {};
+  config.phymode = static_cast<wifi_phy_mode_t>(NODE_ESPNOW_PEER_PHY_MODE);
+  config.rate = static_cast<wifi_phy_rate_t>(NODE_ESPNOW_PEER_PHY_RATE);
+  config.ersu = NODE_ESPNOW_PEER_RATE_ERSU != 0;
+  config.dcm = NODE_ESPNOW_PEER_RATE_DCM != 0;
+
+  const esp_err_t err = esp_now_set_peer_rate_config(mac, &config);
+  if (err != ESP_OK) {
+    ESP_LOGW(kSlaveLogTag,
+             "Failed set peer rate (%s) for %02X:%02X:%02X:%02X:%02X:%02X",
+             esp_err_to_name(err),
+             mac[0],
+             mac[1],
+             mac[2],
+             mac[3],
+             mac[4],
+             mac[5]);
+  }
+#else
+  (void)mac;
+#endif
+}
+
+}  // namespace
+
 int SlaveNode::findMasterIndex(const uint8_t mac[6]) const {
   if (mac == nullptr) {
     return -1;
@@ -94,6 +137,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
 
     masters[existingIndex].channel = channel;
     masters[existingIndex].lastSeenMs = seenMs;
+    applyPeerRateConfig(mac);
     app::espnow::runtime::updateMasterCacheEntry(mac, channel);
     return true;
   }
@@ -119,6 +163,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
       masters[i].channel = channel;
       masters[i].lastSeenMs = seenMs;
       masterCount++;
+      applyPeerRateConfig(mac);
       app::espnow::runtime::updateMasterCacheEntry(mac, channel);
       ESP_LOGI(kSlaveLogTag,
                "Master tracked: %02X:%02X:%02X:%02X:%02X:%02X on ch %u",
@@ -158,6 +203,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
     masters[i].channel = channel;
     masters[i].lastSeenMs = seenMs;
     masterCount++;
+    applyPeerRateConfig(mac);
     app::espnow::runtime::updateMasterCacheEntry(mac, channel);
     ESP_LOGI(kSlaveLogTag,
              "Master registered: %02X:%02X:%02X:%02X:%02X:%02X on ch %u",
@@ -182,6 +228,21 @@ bool SlaveNode::sendToMaster(const uint8_t mac[6],
                              size_t payloadSize) {
   if (!started || mac == nullptr) {
     return false;
+  }
+
+  const uint32_t nowMs = millis();
+  if (gNoMemBackoffUntilMs != 0 && nowMs < gNoMemBackoffUntilMs) {
+    if (nowMs - gNoMemLastWarnMs >= NODE_ESPNOW_NO_MEM_LOG_GAP_MS) {
+      ESP_LOGW(kSlaveLogTag,
+               "Skipping send during NO_MEM backoff (%u ms left)",
+               static_cast<unsigned>(gNoMemBackoffUntilMs - nowMs));
+      gNoMemLastWarnMs = nowMs;
+    }
+    return false;
+  }
+
+  if (nowMs >= gNoMemBackoffUntilMs) {
+    gNoMemBackoffUntilMs = 0;
   }
 
   if (!app::network::wifiManager.isChannelLocked() && channel >= kMinScanChannel && channel <= kMaxScanChannel) {
@@ -225,6 +286,18 @@ bool SlaveNode::sendToMaster(const uint8_t mac[6],
 
   esp_err_t sendErr = esp_now_send(mac, reinterpret_cast<const uint8_t*>(&frame), bytes);
   if (sendErr != ESP_OK) {
+    if (sendErr == ESP_ERR_ESPNOW_NO_MEM) {
+      const uint32_t backoffMs = noMemBackoffMs();
+      gNoMemBackoffUntilMs = nowMs + backoffMs;
+      if (nowMs - gNoMemLastWarnMs >= NODE_ESPNOW_NO_MEM_LOG_GAP_MS) {
+        ESP_LOGW(kSlaveLogTag,
+                 "Send to master failed: NO_MEM, backing off %u ms",
+                 static_cast<unsigned>(backoffMs));
+        gNoMemLastWarnMs = nowMs;
+      }
+      return false;
+    }
+
     ESP_LOGW(kSlaveLogTag, "Send to master failed: %s", esp_err_to_name(sendErr));
     return false;
   }
@@ -304,8 +377,8 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
   }
 
   const auto type = static_cast<PacketType>(header->type);
-  const int knownIndex = activeInstance->findMasterIndex(recv_info->src_addr);
-  const bool fromKnownMaster = knownIndex >= 0;
+  int trackedIndex = activeInstance->findMasterIndex(recv_info->src_addr);
+  const bool fromKnownMaster = trackedIndex >= 0;
 
   uint8_t currentChannel = DEFAULT_CHANNEL;
   wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
@@ -322,9 +395,10 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
     if (!activeInstance->addMasterPeer(recv_info->src_addr, currentChannel, millis())) {
       return;
     }
+    trackedIndex = activeInstance->findMasterIndex(recv_info->src_addr);
   } else {
-    activeInstance->masters[knownIndex].lastSeenMs = millis();
-    activeInstance->masters[knownIndex].channel = currentChannel;
+    activeInstance->masters[trackedIndex].lastSeenMs = millis();
+    activeInstance->masters[trackedIndex].channel = currentChannel;
   }
 
   if (type == PacketType::COMMAND) {
@@ -358,6 +432,26 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
                                                       sizeof(app::espnow::state_binary::MasterNetState))) {
           const auto* state = reinterpret_cast<const app::espnow::state_binary::MasterNetState*>(payload);
           ESP_LOGI("MASTER", "Internet=%s channel=%u", state->online == 1 ? "UP" : "DOWN", state->channel);
+
+          const uint8_t advertisedChannel = state->channel;
+          if (advertisedChannel >= kMinScanChannel && advertisedChannel <= kMaxScanChannel) {
+            if (trackedIndex >= 0) {
+              activeInstance->masters[trackedIndex].channel = advertisedChannel;
+            }
+
+            activeInstance->scanChannel = advertisedChannel;
+            app::espnow::runtime::updateMasterCacheEntry(recv_info->src_addr, advertisedChannel);
+
+            if (!app::network::wifiManager.isChannelLocked()) {
+              const esp_err_t setErr = esp_wifi_set_channel(advertisedChannel, WIFI_SECOND_CHAN_NONE);
+              if (setErr != ESP_OK) {
+                ESP_LOGW(kSlaveLogTag,
+                         "Failed aligning to master advertised channel %u: %s",
+                         static_cast<unsigned>(advertisedChannel),
+                         esp_err_to_name(setErr));
+              }
+            }
+          }
         }
       }
     default:
