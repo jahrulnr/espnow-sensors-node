@@ -210,6 +210,9 @@ void runPowerSaveCycle() {
     enterTimedSleep("espnow init failed");
     return;
   }
+
+  // Force a fresh master link detection in this wake cycle.
+  app::espnow::espnowSlave.resetMasterTracking();
   ESP_LOGI(TAG, "Waiting for master link");
 
   const bool linked = waitForMasterLink(NODE_MASTER_WAIT_TIMEOUT_MS);

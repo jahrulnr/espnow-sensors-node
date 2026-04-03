@@ -17,6 +17,7 @@ class SlaveNode {
   bool sendState(const char* text);
   bool sendStateBinary(const void* payload, size_t payloadSize);
   bool sendModuleListSnapshot();
+  void resetMasterTracking();
   bool isReady() const { return started; }
   bool isMasterLinked() const { return masterCount > 0; }
   void onWakeCycleLinkResult(bool linked);
