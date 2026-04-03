@@ -71,8 +71,15 @@ Mode yang tersedia:
 Macro penting di `include/app_config.h`:
 - `ENABLE_POWERSAVE`
 - `POWERSAVE_SLEEP_MODE`
+- `NODE_FORCE_ROLE_SLEEP_POLICY`
+- `NODE_EFFECTIVE_SLEEP_MODE`
 - `POWERSAVE_DEEP_SLEEP_SEC`
 - `POWERSAVE_LIGHT_SLEEP_MS`
+
+Kebijakan role paksa (default aktif):
+- Jika ada module execute yang aktif (`SERVO_OUTPUT_ENABLED` atau `CAMERA_SENSOR_ENABLED`), mode efektif dipaksa ke light sleep.
+- Jika node hanya expose module input, mode efektif dipaksa ke deep sleep.
+- Kebijakan ini memakai `NODE_EFFECTIVE_SLEEP_MODE`, jadi override `POWERSAVE_SLEEP_MODE` dari env tidak mengubah perilaku runtime selama policy aktif.
 
 ## Sensor Filtering
 
@@ -151,5 +158,10 @@ Sebelum coba link ke master:
 3. Tulis sample ke log.
 
 Jika master tidak terhubung, flow powersave tetap lanjut ke cycle sleep.
+
+Kebijakan sleep gating (powersave):
+- Node hanya boleh sleep saat tidak ada task aktif dari master.
+- Node hanya boleh sleep setelah aktivitas master idle minimal `NODE_SLEEP_IDLE_THRESHOLD_MS` (default `5000ms`).
+- Traffic keepalive (misalnya heartbeat) tidak dianggap sebagai aktivitas task jangka panjang.
 
 English version: [configuration.md](configuration.md)

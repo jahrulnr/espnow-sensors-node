@@ -1,5 +1,6 @@
 #include "camera_hook.h"
 
+#include "app/power/sleep_guard.h"
 #include "app/network/websocket_gateway.h"
 #include "app/sensor/camera_sensor.h"
 
@@ -126,6 +127,29 @@ void CameraHook::onClientDisconnected(WebsocketGateway& gateway, uint8_t clientI
   StreamClient* streamClient = findStreamClient(clientId);
   if (streamClient != nullptr) {
     streamClient->active = false;
+    refreshStreamSleepHold();
+  }
+}
+
+void CameraHook::refreshStreamSleepHold() {
+  bool hasActiveStreams = false;
+  for (size_t i = 0; i < WEBSOCKET_STREAM_MAX_CLIENTS; ++i) {
+    if (streamClients[i].active) {
+      hasActiveStreams = true;
+      break;
+    }
+  }
+
+  if (hasActiveStreams && !streamSleepHold) {
+    app::power::beginMasterTask();
+    streamSleepHold = true;
+  } else if (!hasActiveStreams && streamSleepHold) {
+    app::power::endMasterTask();
+    streamSleepHold = false;
+  }
+
+  if (hasActiveStreams) {
+    app::power::touchMasterActivity();
   }
 }
 
@@ -397,6 +421,7 @@ bool CameraHook::setCameraStream(WebsocketGateway& gateway, uint8_t clientId, bo
     if (streamClient != nullptr) {
       streamClient->active = false;
     }
+    refreshStreamSleepHold();
     return true;
   }
 
@@ -416,6 +441,7 @@ bool CameraHook::setCameraStream(WebsocketGateway& gateway, uint8_t clientId, bo
   streamClient->active = true;
   streamClient->intervalMs = intervalMs;
   streamClient->nextDueMs = millis();
+  refreshStreamSleepHold();
   return true;
 #endif
 }
@@ -442,6 +468,8 @@ void CameraHook::runStreams(WebsocketGateway& gateway) {
   if (dueCount == 0) {
     return;
   }
+
+  app::power::touchMasterActivity();
 
   if (!ensureCameraReady()) {
     for (size_t i = 0; i < dueCount; ++i) {

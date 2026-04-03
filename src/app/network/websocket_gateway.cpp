@@ -1,5 +1,7 @@
 #include "websocket_gateway.h"
 
+#include "app/power/sleep_guard.h"
+
 #include <SpiJsonDocument.h>
 #include <WebSocketsServer.h>
 #include <esp_log.h>
@@ -134,6 +136,8 @@ void WebsocketGateway::onEventStatic(uint8_t clientId, uint8_t eventType, uint8_
 
 
 bool WebsocketGateway::handleTextMessage(uint8_t clientId, const uint8_t* payload, size_t length) {
+  app::power::touchMasterActivity();
+
   if (payload == nullptr || length == 0) {
     return sendError(clientId, "system", "empty_request", "Empty websocket text payload");
   }
@@ -164,9 +168,11 @@ void WebsocketGateway::onEvent(uint8_t clientId, uint8_t eventType, uint8_t* pay
   const WStype_t type = static_cast<WStype_t>(eventType);
   switch (type) {
     case WStype_CONNECTED:
+      app::power::touchMasterActivity();
       ESP_LOGI(TAG, "Client %u connected", static_cast<unsigned>(clientId));
       break;
     case WStype_DISCONNECTED:
+      app::power::touchMasterActivity();
       ESP_LOGI(TAG, "Client %u disconnected", static_cast<unsigned>(clientId));
       hookManager.onClientDisconnected(*this, clientId);
       break;
@@ -174,6 +180,7 @@ void WebsocketGateway::onEvent(uint8_t clientId, uint8_t eventType, uint8_t* pay
       handleTextMessage(clientId, payload, length);
       break;
     case WStype_BIN:
+      app::power::touchMasterActivity();
       sendError(clientId, "system", "unsupported_payload", "Binary request payload is not supported");
       break;
     default:

@@ -51,7 +51,10 @@ Current direction usage:
 ## Discovery and Linking
 
 Important node behavior:
-- Node scans channels `1..13` every `300ms`.
+- Node scans channels `1..13` every `1500ms` by default (`NODE_SCAN_CHANNEL_DWELL_MS`).
+- Node uses RTC+NVS cached master-channel array for faster wake reacquisition.
+- Node runs full channel sweep by cache TTL (`NODE_MASTER_CACHE_FULLSCAN_TTL_MS`, default `30000ms`).
+- Cache is invalidated only after more than `5` consecutive wake cycles without master link (`NODE_MASTER_CACHE_INVALID_AFTER_WAKE_MISS`).
 - Unknown sender is accepted only if it sends `HELLO` or `HEARTBEAT`.
 - Unknown sender packets with other types are ignored.
 - Master timeout on node: `12000ms` without traffic.
@@ -288,6 +291,7 @@ Typical order after node is linked:
 In powersave mode:
 - Every wake cycle, node waits for link until timeout.
 - If linked: sends identity/features, then sends boot sample for each active module.
+- Before sleep, node waits until no active master task remains and master activity is idle for `NODE_SLEEP_IDLE_THRESHOLD_MS`.
 - If not linked: node sleeps again.
 
 ## Recommended Parsing Rules on Master

@@ -33,8 +33,22 @@ bool CameraSensorModule::readSample(SensorSample& out) {
 }
 
 bool CameraSensorModule::bootSample(SensorSample& out) {
-  (void)out;
-  return false;
+  app::sensor::CameraSensor::CaptureMeta meta{};
+  if (!app::sensor::cameraSensor.captureMeta(meta)) {
+    return false;
+  }
+
+  out = {};
+  out.kind = SensorKind::Camera;
+  out.timestampMs = millis();
+  out.valid = true;
+  out.camera.width = meta.width;
+  out.camera.height = meta.height;
+  out.camera.frameBytes = meta.frameBytes;
+  out.camera.latencyMs = meta.latencyMs;
+  out.camera.frameFormat = meta.frameFormat;
+  out.camera.cameraType = meta.cameraType;
+  return true;
 }
 
 }  // namespace app::sensing

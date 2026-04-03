@@ -2,6 +2,7 @@
 
 #include "app/espnow/slave.h"
 #include "app/espnow/state_binary.h"
+#include "app/power/sleep_guard.h"
 #include "app/sensing/sensor_encoder.h"
 #include "app/sensing/sensor_manager.h"
 
@@ -60,14 +61,14 @@ void sendFeaturesStateNow() {
 
 #if ENABLE_POWERSAVE
 uint64_t currentSleepDurationUs() {
-  if (POWERSAVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT) {
+  if (NODE_EFFECTIVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT) {
     return static_cast<uint64_t>(POWERSAVE_LIGHT_SLEEP_MS) * 1000ULL;
   }
   return static_cast<uint64_t>(POWERSAVE_DEEP_SLEEP_SEC) * 1000000ULL;
 }
 
 const char* currentSleepModeName() {
-  return POWERSAVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT ? "light" : "deep";
+  return NODE_EFFECTIVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT ? "light" : "deep";
 }
 
 void enterTimedSleep(const char* reason) {
@@ -86,7 +87,7 @@ void enterTimedSleep(const char* reason) {
 
   delay(20);
 
-  if (POWERSAVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT) {
+  if (NODE_EFFECTIVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT) {
     const esp_err_t err = esp_light_sleep_start();
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "esp_light_sleep_start failed: %s", esp_err_to_name(err));
@@ -123,11 +124,29 @@ bool waitForMasterLink(uint32_t timeoutMs) {
 }
 
 bool sendIdentityAndFeatures() {
-  sendIdentityStateNow();
-  vTaskDelay(pdMS_TO_TICKS(50));
-  sendFeaturesStateNow();
-  vTaskDelay(pdMS_TO_TICKS(50));
-  return true;
+  bool sentAny = false;
+  for (uint32_t i = 0; i < NODE_BOOT_ANNOUNCE_REPEATS; ++i) {
+    sendIdentityStateNow();
+    sentAny = true;
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    sendFeaturesStateNow();
+    sentAny = true;
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    if (!app::espnow::espnowSlave.sendModuleListSnapshot()) {
+      ESP_LOGW(TAG, "Failed sending proactive module list snapshot (attempt %u)", static_cast<unsigned>(i + 1));
+    } else {
+      sentAny = true;
+    }
+
+    if (i + 1 < NODE_BOOT_ANNOUNCE_REPEATS) {
+      vTaskDelay(pdMS_TO_TICKS(NODE_BOOT_ANNOUNCE_GAP_MS));
+    }
+  }
+
+  vTaskDelay(pdMS_TO_TICKS(20));
+  return sentAny;
 }
 
 struct PowerSaveSendContext {
@@ -135,6 +154,8 @@ struct PowerSaveSendContext {
 };
 
 bool sendPowerSaveSample(const app::sensing::SensorSample& sample, void* userData) {
+  app::power::touchMasterActivity();
+
   uint8_t payload[app::espnow::MAX_PAYLOAD_SIZE] = {0};
   size_t payloadSize = 0;
   if (!app::sensing::encodeSampleToStateBinary(sample, payload, sizeof(payload), payloadSize)) {
@@ -156,11 +177,23 @@ bool sendPowerSaveSample(const app::sensing::SensorSample& sample, void* userDat
   return true;
 }
 
+void waitForIdleSleepWindow() {
+  while (!app::power::canEnterSleep(millis(), NODE_SLEEP_IDLE_THRESHOLD_MS)) {
+    app::espnow::espnowSlave.loop();
+    vTaskDelay(pdMS_TO_TICKS(NODE_MASTER_POLL_INTERVAL_MS));
+  }
+}
+
 size_t sendPowerSaveBootSamples() {
   app::sensing::sensorManager.pollAll();
 
   PowerSaveSendContext context = {};
-  app::sensing::sensorManager.collectBootSamples(sendPowerSaveSample, &context);
+  for (uint32_t i = 0; i < NODE_BOOT_SAMPLE_REPEATS; ++i) {
+    app::sensing::sensorManager.collectBootSamples(sendPowerSaveSample, &context);
+    if (i + 1 < NODE_BOOT_SAMPLE_REPEATS) {
+      vTaskDelay(pdMS_TO_TICKS(NODE_POST_SEND_SETTLE_MS));
+    }
+  }
   return context.sent;
 }
 
@@ -179,21 +212,37 @@ void runPowerSaveCycle() {
   }
   ESP_LOGI(TAG, "Waiting for master link");
 
-  if (!waitForMasterLink(NODE_MASTER_WAIT_TIMEOUT_MS)) {
+  const bool linked = waitForMasterLink(NODE_MASTER_WAIT_TIMEOUT_MS);
+  app::espnow::espnowSlave.onWakeCycleLinkResult(linked);
+
+  if (!linked) {
     ESP_LOGW(TAG, "Master not found in %u ms, skipping send", static_cast<unsigned>(NODE_MASTER_WAIT_TIMEOUT_MS));
     enterTimedSleep("master not found");
     return;
   }
 
   hasSeenMasterBefore = true;
+  app::power::touchMasterActivity();
   sendIdentityAndFeatures();
+
+  const uint32_t featureBits = app::sensing::sensorManager.featureBits();
+  const bool hasEspNowBootSampleModule =
+      (featureBits & static_cast<uint32_t>(app::espnow::state_binary::FeatureSensor)) != 0 ||
+      (featureBits & static_cast<uint32_t>(app::espnow::state_binary::FeatureMmwave)) != 0 ||
+      (featureBits & static_cast<uint32_t>(app::espnow::state_binary::FeatureCameraJpeg)) != 0;
 
   const size_t sentSamples = sendPowerSaveBootSamples();
   if (sentSamples == 0) {
-    ESP_LOGW(TAG, "No sensor sample sent before sleep");
+    if (hasEspNowBootSampleModule) {
+      ESP_LOGW(TAG, "No ESP-NOW boot sample sent before sleep");
+    } else {
+      ESP_LOGI(TAG, "No ESP-NOW boot sample expected for active modules");
+    }
   } else {
     ESP_LOGI(TAG, "Sent %u sensor sample(s) before sleep", static_cast<unsigned>(sentSamples));
   }
+
+  waitForIdleSleepWindow();
 
   enterTimedSleep("cycle complete");
 }

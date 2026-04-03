@@ -109,6 +109,46 @@ bool CameraSensor::getRuntimeConfig(RuntimeConfig& out) const {
 #endif
 }
 
+bool CameraSensor::captureMeta(CaptureMeta& out) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)out;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  for (uint32_t attempt = 0; attempt < CAMERA_META_CAPTURE_RETRIES; ++attempt) {
+    const uint32_t captureStartMs = millis();
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (fb == nullptr) {
+      delay(CAMERA_META_RETRY_DELAY_MS);
+      continue;
+    }
+
+    if (fb->buf == nullptr || fb->len == 0) {
+      esp_camera_fb_return(fb);
+      delay(CAMERA_META_RETRY_DELAY_MS);
+      continue;
+    }
+
+    out.width = static_cast<uint16_t>(fb->width);
+    out.height = static_cast<uint16_t>(fb->height);
+    out.frameBytes = static_cast<uint32_t>(fb->len);
+    out.latencyMs = static_cast<uint16_t>(millis() - captureStartMs);
+    out.frameFormat = fb->format == PIXFORMAT_JPEG ? 1 : 0;
+
+    sensor_t* sensor = getSensorHandle();
+    out.cameraType = sensor != nullptr ? static_cast<uint8_t>(sensor->id.PID & 0xFF) : 0;
+
+    esp_camera_fb_return(fb);
+    return true;
+  }
+
+  return false;
+#endif
+}
+
 bool CameraSensor::setFrameSize(uint8_t frameSize) {
 #if !CAMERA_SENSOR_ENABLED
   (void)frameSize;

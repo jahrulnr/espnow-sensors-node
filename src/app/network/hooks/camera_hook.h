@@ -24,6 +24,7 @@ class CameraHook : public IWebsocketHook {
 
   StreamClient streamClients[WEBSOCKET_STREAM_MAX_CLIENTS] = {};
   uint32_t cameraSequence = 0;
+  bool streamSleepHold = false;
 
   StreamClient* findStreamClient(uint8_t clientId);
   StreamClient* ensureStreamClient(uint8_t clientId);
@@ -34,6 +35,7 @@ class CameraHook : public IWebsocketHook {
   bool captureAndSendFrame(WebsocketGateway& gateway, uint8_t clientId, const char* mode);
   bool setCameraStream(WebsocketGateway& gateway, uint8_t clientId, bool enabled, uint32_t intervalMs);
   void runStreams(WebsocketGateway& gateway);
+  void refreshStreamSleepHold();
 };
 
 }  // namespace app::network

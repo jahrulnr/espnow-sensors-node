@@ -19,6 +19,7 @@ static_assert(static_cast<uint8_t>(state_binary::Type::ServoControl) == 13, "Ser
 static_assert(static_cast<uint8_t>(state_binary::Type::ServoAck) == 14, "ServoAck type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::ModuleListReq) == 15, "ModuleListReq type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::ModuleInfo) == 16, "ModuleInfo type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::CameraCapture) == 17, "CameraCapture type changed");
 
 static_assert(sizeof(state_binary::Header) == 4, "state_binary::Header size changed");
 static_assert(sizeof(state_binary::SensorState) <= MAX_PAYLOAD_SIZE, "SensorState exceeds ESP-NOW payload");
@@ -34,6 +35,8 @@ static_assert(sizeof(state_binary::ModuleListReqCommand) <= MAX_PAYLOAD_SIZE,
               "ModuleListReqCommand exceeds ESP-NOW payload");
 static_assert(sizeof(state_binary::ModuleInfoState) <= MAX_PAYLOAD_SIZE,
               "ModuleInfoState exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::CameraCaptureState) <= MAX_PAYLOAD_SIZE,
+              "CameraCaptureState exceeds ESP-NOW payload");
 
 static_assert(std::is_trivially_copyable<state_binary::SensorState>::value,
               "SensorState must remain trivially copyable");
@@ -49,5 +52,7 @@ static_assert(std::is_trivially_copyable<state_binary::ModuleListReqCommand>::va
               "ModuleListReqCommand must remain trivially copyable");
 static_assert(std::is_trivially_copyable<state_binary::ModuleInfoState>::value,
               "ModuleInfoState must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::CameraCaptureState>::value,
+              "CameraCaptureState must remain trivially copyable");
 
 }  // namespace app::espnow

@@ -24,6 +24,7 @@ enum class Type : uint8_t {
   ServoAck = 14,
   ModuleListReq = 15,
   ModuleInfo = 16,
+  CameraCapture = 17,
 };
 
 enum class ModuleDomain : uint8_t {
@@ -154,6 +155,16 @@ struct __attribute__((packed)) ModuleInfoState {
   uint8_t reserved0;
   uint32_t featureBits;
   char id[16];
+};
+
+struct __attribute__((packed)) CameraCaptureState {
+  Header header;
+  uint16_t width;
+  uint16_t height;
+  uint32_t frameBytes;
+  uint16_t latencyMs;
+  uint8_t frameFormat;
+  uint8_t cameraType;
 };
 
 inline void initHeader(Header& header, Type type) {

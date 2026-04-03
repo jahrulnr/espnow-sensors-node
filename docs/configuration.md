@@ -71,8 +71,15 @@ Available modes:
 Important macros in `include/app_config.h`:
 - `ENABLE_POWERSAVE`
 - `POWERSAVE_SLEEP_MODE`
+- `NODE_FORCE_ROLE_SLEEP_POLICY`
+- `NODE_EFFECTIVE_SLEEP_MODE`
 - `POWERSAVE_DEEP_SLEEP_SEC`
 - `POWERSAVE_LIGHT_SLEEP_MS`
+
+Forced role policy (default enabled):
+- If any execution module is enabled (`SERVO_OUTPUT_ENABLED` or `CAMERA_SENSOR_ENABLED`), effective mode is forced to light sleep.
+- If node only exposes input modules, effective mode is forced to deep sleep.
+- This policy uses `NODE_EFFECTIVE_SLEEP_MODE`, so overriding `POWERSAVE_SLEEP_MODE` from env does not change runtime behavior while policy is enabled.
 
 ## Sensor Filtering
 
@@ -151,5 +158,10 @@ Before attempting to link with master:
 3. Writes those samples to logs.
 
 If master is not connected, powersave flow still continues to the sleep cycle.
+
+Sleep gating policy (powersave):
+- Node may enter sleep only when no active master task is running.
+- Node may enter sleep only after master activity has been idle for at least `NODE_SLEEP_IDLE_THRESHOLD_MS` (default `5000ms`).
+- Keepalive traffic (for example heartbeat) should not be treated as long-running task activity.
 
 Indonesian version: [configuration_id.md](configuration_id.md)

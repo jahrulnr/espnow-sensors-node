@@ -51,7 +51,10 @@ Arah yang dipakai saat ini:
 ## Discovery Dan Linking
 
 Perilaku penting di node:
-- Node scan channel `1..13` setiap `300ms`.
+- Node scan channel `1..13` setiap `1500ms` secara default (`NODE_SCAN_CHANNEL_DWELL_MS`).
+- Node memakai array cache channel master berbasis RTC+NVS untuk percepat reacquire saat wake.
+- Node tetap menjalankan full scan channel berdasarkan TTL cache (`NODE_MASTER_CACHE_FULLSCAN_TTL_MS`, default `30000ms`).
+- Cache hanya dianggap invalid jika gagal link ke master lebih dari `5` wake cycle berturut-turut (`NODE_MASTER_CACHE_INVALID_AFTER_WAKE_MISS`).
 - Sender yang belum dikenal hanya diterima kalau kirim `HELLO` atau `HEARTBEAT`.
 - Sender unknown yang kirim tipe lain akan diabaikan.
 - Timeout master di node: `12000ms` tanpa traffic.
@@ -288,6 +291,7 @@ Urutan umum setelah node linked:
 Pada mode powersave:
 - Tiap wake cycle node menunggu link sampai timeout.
 - Jika linked: kirim identity/features lalu sample boot masing-masing module aktif.
+- Sebelum sleep, node menunggu sampai tidak ada task aktif dari master dan aktivitas master idle selama `NODE_SLEEP_IDLE_THRESHOLD_MS`.
 - Jika tidak linked: node sleep lagi.
 
 ## Parsing Rules Yang Disarankan Di Master

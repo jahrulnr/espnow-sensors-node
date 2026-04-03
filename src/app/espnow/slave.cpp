@@ -4,9 +4,11 @@
 
 #include "app/actuation/actuator_manager.h"
 #include "app/network/wifi_manager.h"
+#include "app/power/sleep_guard.h"
 #include "app/sensing/sensor_manager.h"
 #include <app_config.h>
 #include <WiFi.h>
+#include <Preferences.h>
 #include <cstring>
 #include <esp_event.h>
 #include <esp_log.h>
@@ -70,7 +72,7 @@ void sendServoAckNow(SlaveNode& node, const app::actuation::ActuationResponse& r
   }
 }
 
-void sendModuleInfoNow(SlaveNode& node,
+bool sendModuleInfoNow(SlaveNode& node,
                        uint8_t index,
                        uint8_t total,
                        app::espnow::state_binary::ModuleDomain domain,
@@ -88,12 +90,15 @@ void sendModuleInfoNow(SlaveNode& node,
     state.id[sizeof(state.id) - 1] = '\0';
   }
 
-  if (!node.sendStateBinary(&state, sizeof(state))) {
+  const bool sent = node.sendStateBinary(&state, sizeof(state));
+  if (!sent) {
     ESP_LOGW("espnow_slave", "Failed sending module info state");
   }
+
+  return sent;
 }
 
-void sendModuleListNow(SlaveNode& node) {
+bool sendModuleListNow(SlaveNode& node) {
   app::sensing::SensorManager::ModuleDescriptor sensorDescriptors[app::sensing::SensorManager::MAX_MODULES] = {};
   app::actuation::ActuatorManager::ModuleDescriptor
       actuatorDescriptors[app::actuation::ActuatorManager::MAX_MODULES] = {};
@@ -104,26 +109,29 @@ void sendModuleListNow(SlaveNode& node) {
   const size_t totalCount = sensorCount + actuatorCount;
   const uint8_t total = totalCount > 255 ? 255 : static_cast<uint8_t>(totalCount);
 
+  bool sentAny = false;
   uint8_t index = 0;
   for (size_t i = 0; i < sensorCount && index < total; ++i) {
-    sendModuleInfoNow(node,
-                      index,
-                      total,
-                      app::espnow::state_binary::ModuleDomain::Sensor,
-                      sensorDescriptors[i].id,
-                      sensorDescriptors[i].featureBits);
+    sentAny = sendModuleInfoNow(node,
+                                index,
+                                total,
+                                app::espnow::state_binary::ModuleDomain::Sensor,
+                                sensorDescriptors[i].id,
+                                sensorDescriptors[i].featureBits) || sentAny;
     index++;
   }
 
   for (size_t i = 0; i < actuatorCount && index < total; ++i) {
-    sendModuleInfoNow(node,
-                      index,
-                      total,
-                      app::espnow::state_binary::ModuleDomain::Actuator,
-                      actuatorDescriptors[i].id,
-                      actuatorDescriptors[i].featureBits);
+    sentAny = sendModuleInfoNow(node,
+                                index,
+                                total,
+                                app::espnow::state_binary::ModuleDomain::Actuator,
+                                actuatorDescriptors[i].id,
+                                actuatorDescriptors[i].featureBits) || sentAny;
     index++;
   }
+
+  return sentAny;
 }
 
 }  // namespace
@@ -131,9 +139,252 @@ void sendModuleListNow(SlaveNode& node) {
 static const char* TAG = "espnow_slave";
 static constexpr uint8_t MIN_SCAN_CHANNEL = 1;
 static constexpr uint8_t MAX_SCAN_CHANNEL = 13;
-static constexpr uint32_t CHANNEL_SCAN_INTERVAL_MS = 300;
+static constexpr uint32_t CHANNEL_SCAN_INTERVAL_MS = NODE_SCAN_CHANNEL_DWELL_MS;
 static constexpr uint32_t MASTER_TIMEOUT_MS = 12000;
 static constexpr uint32_t HELLO_INTERVAL_MS = 7000;
+static constexpr uint8_t CACHE_VERSION = 1;
+static constexpr size_t CACHE_MAX_ENTRIES = NODE_MASTER_CACHE_MAX_ENTRIES;
+static constexpr const char* CACHE_PREFS_NAMESPACE = "espn_cache";
+static constexpr const char* CACHE_PREFS_KEY = "master_tbl";
+static const uint8_t kBroadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+struct MasterCacheEntry {
+  uint8_t used;
+  uint8_t mac[6];
+  uint8_t channel;
+  uint8_t reserved;
+};
+
+struct MasterCacheStore {
+  uint8_t version;
+  uint8_t missStreak;
+  uint8_t entryCount;
+  uint8_t reserved;
+  MasterCacheEntry entries[CACHE_MAX_ENTRIES];
+};
+
+RTC_DATA_ATTR MasterCacheStore gMasterCache = {};
+RTC_DATA_ATTR bool gMasterCacheReady = false;
+RTC_DATA_ATTR uint8_t gWakeCyclesSinceFullScan = 0;
+RTC_DATA_ATTR uint8_t gCachedScanChannels[CACHE_MAX_ENTRIES] = {0};
+RTC_DATA_ATTR uint8_t gCachedScanChannelCount = 0;
+RTC_DATA_ATTR uint8_t gCachedScanIndex = 0;
+RTC_DATA_ATTR bool gUseCachedScanMode = false;
+
+uint8_t clampChannel(uint8_t channel) {
+  if (channel < MIN_SCAN_CHANNEL || channel > MAX_SCAN_CHANNEL) {
+    return DEFAULT_CHANNEL;
+  }
+  return channel;
+}
+
+void clearMasterCacheEntries(MasterCacheStore& cache) {
+  cache.entryCount = 0;
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    cache.entries[i].used = 0;
+    cache.entries[i].channel = DEFAULT_CHANNEL;
+    cache.entries[i].reserved = 0;
+    memset(cache.entries[i].mac, 0, sizeof(cache.entries[i].mac));
+  }
+}
+
+void initMasterCacheDefaults(MasterCacheStore& cache) {
+  cache.version = CACHE_VERSION;
+  cache.missStreak = 0;
+  cache.reserved = 0;
+  clearMasterCacheEntries(cache);
+}
+
+void recountMasterCacheEntries(MasterCacheStore& cache) {
+  uint8_t count = 0;
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    if (cache.entries[i].used != 0) {
+      count++;
+    }
+  }
+  cache.entryCount = count;
+}
+
+void persistMasterCacheToNvs(const MasterCacheStore& cache) {
+  Preferences prefs;
+  if (!prefs.begin(CACHE_PREFS_NAMESPACE, false)) {
+    ESP_LOGW(TAG, "Failed opening NVS namespace '%s'", CACHE_PREFS_NAMESPACE);
+    return;
+  }
+
+  const size_t written = prefs.putBytes(CACHE_PREFS_KEY, &cache, sizeof(cache));
+  if (written != sizeof(cache)) {
+    ESP_LOGW(TAG, "Failed writing master cache to NVS (written=%u)", static_cast<unsigned>(written));
+  }
+  prefs.end();
+}
+
+bool loadMasterCacheFromNvs(MasterCacheStore& cache) {
+  Preferences prefs;
+  if (!prefs.begin(CACHE_PREFS_NAMESPACE, true)) {
+    ESP_LOGW(TAG, "Failed opening NVS namespace '%s' (read)", CACHE_PREFS_NAMESPACE);
+    return false;
+  }
+
+  const size_t storedSize = prefs.getBytesLength(CACHE_PREFS_KEY);
+  if (storedSize != sizeof(cache)) {
+    prefs.end();
+    return false;
+  }
+
+  const size_t read = prefs.getBytes(CACHE_PREFS_KEY, &cache, sizeof(cache));
+  prefs.end();
+  return read == sizeof(cache);
+}
+
+uint8_t fullScanWakeInterval() {
+#if ENABLE_POWERSAVE
+#if POWERSAVE_SLEEP_MODE == POWERSAVE_SLEEP_MODE_LIGHT
+  constexpr uint32_t wakeIntervalMs = POWERSAVE_LIGHT_SLEEP_MS;
+#else
+  constexpr uint32_t wakeIntervalMs = POWERSAVE_DEEP_SLEEP_SEC * 1000U;
+#endif
+  const uint32_t interval = NODE_MASTER_CACHE_FULLSCAN_TTL_MS;
+  if (wakeIntervalMs == 0 || interval == 0) {
+    return 1;
+  }
+
+  uint32_t cycles = (interval + wakeIntervalMs - 1U) / wakeIntervalMs;
+  if (cycles == 0) {
+    cycles = 1;
+  }
+  if (cycles > 255U) {
+    cycles = 255U;
+  }
+  return static_cast<uint8_t>(cycles);
+#else
+  return 1;
+#endif
+}
+
+void ensureMasterCacheLoaded() {
+  if (gMasterCacheReady) {
+    return;
+  }
+
+  if (!loadMasterCacheFromNvs(gMasterCache) || gMasterCache.version != CACHE_VERSION) {
+    initMasterCacheDefaults(gMasterCache);
+    persistMasterCacheToNvs(gMasterCache);
+  } else {
+    recountMasterCacheEntries(gMasterCache);
+  }
+
+  gMasterCacheReady = true;
+}
+
+bool appendChannelIfMissing(uint8_t* channels, size_t& count, uint8_t channel) {
+  if (count >= CACHE_MAX_ENTRIES) {
+    return false;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    if (channels[i] == channel) {
+      return false;
+    }
+  }
+  channels[count++] = channel;
+  return true;
+}
+
+void buildCachedScanPlan(bool useCachedScanOnly) {
+  gCachedScanChannelCount = 0;
+  gCachedScanIndex = 0;
+  gUseCachedScanMode = false;
+  memset(gCachedScanChannels, 0, sizeof(gCachedScanChannels));
+
+  if (!useCachedScanOnly) {
+    return;
+  }
+
+  size_t count = 0;
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    if (gMasterCache.entries[i].used == 0) {
+      continue;
+    }
+    appendChannelIfMissing(gCachedScanChannels, count, clampChannel(gMasterCache.entries[i].channel));
+  }
+
+  gCachedScanChannelCount = static_cast<uint8_t>(count);
+  gUseCachedScanMode = gCachedScanChannelCount > 0;
+}
+
+void updateCacheEntry(const uint8_t mac[6], uint8_t channel) {
+  if (mac == nullptr) {
+    return;
+  }
+
+  ensureMasterCacheLoaded();
+  const uint8_t normalizedChannel = clampChannel(channel);
+
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    if (gMasterCache.entries[i].used != 0 && memcmp(gMasterCache.entries[i].mac, mac, 6) == 0) {
+      gMasterCache.entries[i].channel = normalizedChannel;
+      recountMasterCacheEntries(gMasterCache);
+      return;
+    }
+  }
+
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    if (gMasterCache.entries[i].used != 0) {
+      continue;
+    }
+
+    gMasterCache.entries[i].used = 1;
+    memcpy(gMasterCache.entries[i].mac, mac, 6);
+    gMasterCache.entries[i].channel = normalizedChannel;
+    gMasterCache.entries[i].reserved = 0;
+    recountMasterCacheEntries(gMasterCache);
+    return;
+  }
+
+  // Replace oldest slot (index 0) when cache is full.
+  gMasterCache.entries[0].used = 1;
+  memcpy(gMasterCache.entries[0].mac, mac, 6);
+  gMasterCache.entries[0].channel = normalizedChannel;
+  gMasterCache.entries[0].reserved = 0;
+  recountMasterCacheEntries(gMasterCache);
+}
+
+bool shouldUseCachedScanOnly() {
+  ensureMasterCacheLoaded();
+  const uint8_t intervalWakeCycles = fullScanWakeInterval();
+  gWakeCyclesSinceFullScan++;
+
+  if (gWakeCyclesSinceFullScan >= intervalWakeCycles) {
+    gWakeCyclesSinceFullScan = 0;
+    ESP_LOGI(TAG, "Cache TTL reached, forcing full scan this wake cycle");
+    return false;
+  }
+
+  return gMasterCache.entryCount > 0;
+}
+
+void applyWakeResultToCache(bool linked) {
+  ensureMasterCacheLoaded();
+
+  if (linked) {
+    gMasterCache.missStreak = 0;
+    persistMasterCacheToNvs(gMasterCache);
+    return;
+  }
+
+  if (gMasterCache.missStreak < 255) {
+    gMasterCache.missStreak++;
+  }
+
+  if (gMasterCache.missStreak > NODE_MASTER_CACHE_INVALID_AFTER_WAKE_MISS) {
+    ESP_LOGW(TAG,
+             "Invalidating master cache after %u wake misses",
+             static_cast<unsigned>(gMasterCache.missStreak));
+    initMasterCacheDefaults(gMasterCache);
+  }
+
+  persistMasterCacheToNvs(gMasterCache);
+}
 
 bool ensureWifiStaReady() {
   ESP_LOGI(TAG, "begin(): init WiFi STA core");
@@ -197,13 +448,23 @@ bool SlaveNode::begin(uint8_t channel, bool enablePipeline) {
     return false;
   }
 
-  if (channel > 0) {
-    ESP_LOGI(TAG, "begin(): set initial channel=%u", channel);
-    esp_err_t channelErr = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+  ensureMasterCacheLoaded();
+  const bool useCachedScanOnly = shouldUseCachedScanOnly();
+  buildCachedScanPlan(useCachedScanOnly);
+
+  uint8_t startChannel = channel;
+  if (gCachedScanChannelCount > 0) {
+    startChannel = gCachedScanChannels[0];
+    ESP_LOGI(TAG, "Using cached scan channel %u for fast wake link", startChannel);
+  }
+
+  if (startChannel > 0) {
+    ESP_LOGI(TAG, "begin(): set initial channel=%u", startChannel);
+    esp_err_t channelErr = esp_wifi_set_channel(startChannel, WIFI_SECOND_CHAN_NONE);
     if (channelErr != ESP_OK) {
-      ESP_LOGW(TAG, "Failed to set WiFi channel %d: %s", channel, esp_err_to_name(channelErr));
+      ESP_LOGW(TAG, "Failed to set WiFi channel %d: %s", startChannel, esp_err_to_name(channelErr));
     }
-    scanChannel = channel;
+    scanChannel = startChannel;
   } else {
     scanChannel = MIN_SCAN_CHANNEL;
   }
@@ -220,12 +481,25 @@ bool SlaveNode::begin(uint8_t channel, bool enablePipeline) {
   esp_now_register_send_cb(SlaveNode::onSendStatic);
   esp_now_register_recv_cb(SlaveNode::onReceiveStatic);
 
+  if (!esp_now_is_peer_exist(kBroadcastMac)) {
+    esp_now_peer_info_t broadcastPeer = {};
+    memcpy(broadcastPeer.peer_addr, kBroadcastMac, 6);
+    broadcastPeer.ifidx = WIFI_IF_STA;
+    broadcastPeer.channel = 0;
+    broadcastPeer.encrypt = false;
+    const esp_err_t addBroadcast = esp_now_add_peer(&broadcastPeer);
+    if (addBroadcast != ESP_OK && addBroadcast != ESP_ERR_ESPNOW_EXIST) {
+      ESP_LOGW(TAG, "Failed adding broadcast peer: %s", esp_err_to_name(addBroadcast));
+    }
+  }
+
   started = true;
   lastHelloMs = millis();
   lastScanMs = millis();
   masterCount = 0;
   memset(masters, 0, sizeof(masters));
   (void)enablePipeline;
+
   ESP_LOGI(TAG, "ESP-NOW slave ready");
   return true;
 }
@@ -259,10 +533,15 @@ void SlaveNode::scanNextChannel() {
   }
 
   uint8_t nextChannel = scanChannel;
-  if (nextChannel < MIN_SCAN_CHANNEL || nextChannel >= MAX_SCAN_CHANNEL) {
-    nextChannel = MIN_SCAN_CHANNEL;
+  if (gUseCachedScanMode && gCachedScanChannelCount > 0) {
+    nextChannel = gCachedScanChannels[gCachedScanIndex];
+    gCachedScanIndex = static_cast<uint8_t>((gCachedScanIndex + 1) % gCachedScanChannelCount);
   } else {
-    nextChannel++;
+    if (nextChannel < MIN_SCAN_CHANNEL || nextChannel >= MAX_SCAN_CHANNEL) {
+      nextChannel = MIN_SCAN_CHANNEL;
+    } else {
+      nextChannel++;
+    }
   }
 
   const esp_err_t err = esp_wifi_set_channel(nextChannel, WIFI_SECOND_CHAN_NONE);
@@ -328,12 +607,33 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
 
   const int existingIndex = findMasterIndex(mac);
   if (existingIndex >= 0) {
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, mac, 6);
+    peer.ifidx = WIFI_IF_STA;
+    peer.channel = 0;
+    peer.encrypt = false;
+    const esp_err_t modErr = esp_now_mod_peer(&peer);
+    if (modErr != ESP_OK && modErr != ESP_ERR_ESPNOW_NOT_FOUND) {
+      ESP_LOGW(TAG, "Failed to sync master peer channel: %s", esp_err_to_name(modErr));
+    }
+
     masters[existingIndex].channel = channel;
     masters[existingIndex].lastSeenMs = seenMs;
+    updateCacheEntry(mac, channel);
     return true;
   }
 
   if (esp_now_is_peer_exist(mac)) {
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, mac, 6);
+    peer.ifidx = WIFI_IF_STA;
+    peer.channel = 0;
+    peer.encrypt = false;
+    const esp_err_t modErr = esp_now_mod_peer(&peer);
+    if (modErr != ESP_OK && modErr != ESP_ERR_ESPNOW_NOT_FOUND) {
+      ESP_LOGW(TAG, "Failed to sync existing peer channel: %s", esp_err_to_name(modErr));
+    }
+
     for (size_t i = 0; i < MAX_TRACKED_MASTERS; ++i) {
       if (masters[i].used) {
         continue;
@@ -344,6 +644,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
       masters[i].channel = channel;
       masters[i].lastSeenMs = seenMs;
       masterCount++;
+      updateCacheEntry(mac, channel);
       ESP_LOGI(TAG,
                "Master tracked: %02X:%02X:%02X:%02X:%02X:%02X on ch %u",
                mac[0],
@@ -382,6 +683,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
     masters[i].channel = channel;
     masters[i].lastSeenMs = seenMs;
     masterCount++;
+    updateCacheEntry(mac, channel);
     ESP_LOGI(TAG,
              "Master registered: %02X:%02X:%02X:%02X:%02X:%02X on ch %u",
              mac[0],
@@ -396,6 +698,22 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
 
   ESP_LOGW(TAG, "Master list full, cannot track new peer");
   return false;
+}
+
+void SlaveNode::onWakeCycleLinkResult(bool linked) {
+  applyWakeResultToCache(linked);
+}
+
+void SlaveNode::markMasterActivity() {
+  app::power::touchMasterActivity();
+}
+
+bool SlaveNode::sendModuleListSnapshot() {
+  if (!started || masterCount == 0) {
+    return false;
+  }
+
+  return sendModuleListNow(*this);
 }
 
 bool SlaveNode::sendToMaster(const uint8_t mac[6],
@@ -428,6 +746,24 @@ bool SlaveNode::sendToMaster(const uint8_t mac[6],
   }
 
   const size_t bytes = sizeof(frame.header) + sizeof(frame.payloadSize) + frame.payloadSize;
+
+  // Keep peer channel policy dynamic to avoid stale fixed-channel entries across reconnect cycles.
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, mac, 6);
+  peer.ifidx = WIFI_IF_STA;
+  peer.channel = 0;
+  peer.encrypt = false;
+  const esp_err_t modErr = esp_now_mod_peer(&peer);
+  if (modErr == ESP_ERR_ESPNOW_NOT_FOUND) {
+    const esp_err_t addErr = esp_now_add_peer(&peer);
+    if (addErr != ESP_OK && addErr != ESP_ERR_ESPNOW_EXIST) {
+      ESP_LOGW(TAG, "Failed to add peer before send: %s", esp_err_to_name(addErr));
+      return false;
+    }
+  } else if (modErr != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to update peer before send: %s", esp_err_to_name(modErr));
+  }
+
   esp_err_t sendErr = esp_now_send(mac, reinterpret_cast<const uint8_t*>(&frame), bytes);
   if (sendErr != ESP_OK) {
     ESP_LOGW(TAG, "Send to master failed: %s", esp_err_to_name(sendErr));
@@ -467,12 +803,41 @@ bool SlaveNode::sendStateBinary(const void* payload, size_t payloadSize) {
     return false;
   }
 
-  return sendToKnownMasters(PacketType::STATE, payload, payloadSize);
+  bool sent = sendToKnownMasters(PacketType::STATE, payload, payloadSize);
+
+#if NODE_STATE_BROADCAST_MIRROR
+  // Mirror state to broadcast as fallback when unicast ACK is unreliable.
+  sent = sendToMaster(kBroadcastMac, scanChannel, PacketType::STATE, payload, payloadSize) || sent;
+#endif
+
+  return sent;
 }
 
 void SlaveNode::onSendStatic(const esp_now_send_info_t* tx_info, esp_now_send_status_t status) {
   if (!activeInstance) {
     return;
+  }
+
+  if (status != ESP_NOW_SEND_SUCCESS) {
+    uint8_t currentPrimary = 0;
+    wifi_second_chan_t currentSecondary = WIFI_SECOND_CHAN_NONE;
+    if (esp_wifi_get_channel(&currentPrimary, &currentSecondary) != ESP_OK) {
+      currentPrimary = 0;
+    }
+
+    if (tx_info != nullptr && tx_info->des_addr != nullptr) {
+      ESP_LOGW(TAG,
+               "TX failed -> %02X:%02X:%02X:%02X:%02X:%02X (ch=%u)",
+               tx_info->des_addr[0],
+               tx_info->des_addr[1],
+               tx_info->des_addr[2],
+               tx_info->des_addr[3],
+               tx_info->des_addr[4],
+               tx_info->des_addr[5],
+               static_cast<unsigned>(currentPrimary));
+    } else {
+      ESP_LOGW(TAG, "TX failed (no tx_info, ch=%u)", static_cast<unsigned>(currentPrimary));
+    }
   }
 
   if (tx_info == nullptr) {
@@ -524,6 +889,10 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
   } else {
     activeInstance->masters[knownIndex].lastSeenMs = millis();
     activeInstance->masters[knownIndex].channel = currentChannel;
+  }
+
+  if (type == PacketType::COMMAND) {
+    activeInstance->markMasterActivity();
   }
 
   if (type == PacketType::HELLO || type == PacketType::HEARTBEAT) {
@@ -591,7 +960,9 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
                                                       payloadSize,
                                                       app::espnow::state_binary::Type::ModuleListReq,
                                                       sizeof(app::espnow::state_binary::ModuleListReqCommand))) {
-          sendModuleListNow(*activeInstance);
+          if (!sendModuleListNow(*activeInstance)) {
+            ESP_LOGW(TAG, "Module list request received but response send failed");
+          }
           break;
         }
       } else {

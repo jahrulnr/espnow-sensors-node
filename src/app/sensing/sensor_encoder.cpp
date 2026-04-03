@@ -66,6 +66,26 @@ bool encodeSampleToStateBinary(const SensorSample& sample,
       return true;
     }
 
+    case SensorKind::Camera: {
+      app::espnow::state_binary::CameraCaptureState state = {};
+      app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::CameraCapture);
+      state.width = sample.camera.width;
+      state.height = sample.camera.height;
+      state.frameBytes = sample.camera.frameBytes;
+      state.latencyMs = sample.camera.latencyMs;
+      state.frameFormat = sample.camera.frameFormat;
+      state.cameraType = sample.camera.cameraType;
+
+      const size_t bytes = sizeof(state);
+      if (outCapacity < bytes) {
+        return false;
+      }
+
+      memcpy(outPayload, &state, bytes);
+      outSize = bytes;
+      return true;
+    }
+
     default:
       return false;
   }

@@ -16,8 +16,11 @@ class SlaveNode {
 
   bool sendState(const char* text);
   bool sendStateBinary(const void* payload, size_t payloadSize);
+  bool sendModuleListSnapshot();
   bool isReady() const { return started; }
   bool isMasterLinked() const { return masterCount > 0; }
+  void onWakeCycleLinkResult(bool linked);
+  void markMasterActivity();
 
  private:
   static constexpr size_t MAX_TRACKED_MASTERS = 8;
