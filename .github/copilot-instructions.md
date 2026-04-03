@@ -116,6 +116,7 @@ No unit-test suite is provided; build success + contract consistency is mandator
 - Keep feature toggles in `app_config.h` (`#ifndef` + default value).
 - Maintain backward-compatible wire behavior unless explicitly requested.
 - Add/adjust docs for any behavior or contract change.
+- If adding/removing/renaming any driver/module/hook, update module support lists in both `README.md` and `README_id.md` in the same task.
 - Use ESP logging (`ESP_LOGI/W/E/D`) instead of `Serial.print`.
 - Preserve board profile modularity; avoid hardcoding per-board behavior in runtime logic.
 

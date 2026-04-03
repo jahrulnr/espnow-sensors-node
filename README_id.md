@@ -31,6 +31,20 @@ Contoh deployment:
 - ESP32-CAM (AI Thinker): `camera + kontrol ESP-NOW-first` → node kamera dengan servo pan/tilt
 - Board lainnya: tambah profile, tambah module, flash dan langsung jalan.
 
+## Dukungan Module
+
+Dukungan module/driver yang saat ini tersedia di repository ini:
+
+- Module sensor:
+	- `dht`
+	- `mmwave`
+	- `camera`
+- Module aktuator:
+	- `servo`
+- Hook transport (WebSocket):
+	- `system`
+	- `camera`
+
 ## Mulai Dari Sini
 
 Kalau kamu ingin:
