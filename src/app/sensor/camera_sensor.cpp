@@ -14,6 +14,10 @@ namespace {
 
 #if CAMERA_SENSOR_ENABLED
 static constexpr const char* TAG = "CAMERA_SENSOR";
+
+sensor_t* getSensorHandle() {
+  return esp_camera_sensor_get();
+}
 #endif
 
 }  // namespace
@@ -54,12 +58,8 @@ bool CameraSensor::begin() {
   config.frame_size = FRAMESIZE_QVGA;
   config.jpeg_quality = WEBSOCKET_CAMERA_JPEG_QUALITY;
   config.fb_count = WEBSOCKET_CAMERA_FB_COUNT;
-#if defined(CAMERA_GRAB_LATEST)
   config.grab_mode = CAMERA_GRAB_LATEST;
-#endif
-#if defined(CAMERA_FB_IN_PSRAM) && defined(CAMERA_FB_IN_DRAM)
   config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-#endif
 
   if (config.pin_d0 < 0 || config.pin_d1 < 0 || config.pin_d2 < 0 || config.pin_d3 < 0 || config.pin_d4 < 0 ||
       config.pin_d5 < 0 || config.pin_d6 < 0 || config.pin_d7 < 0 || config.pin_xclk < 0 || config.pin_pclk < 0 ||
@@ -79,6 +79,177 @@ bool CameraSensor::begin() {
   ready = true;
   ESP_LOGI(TAG, "Camera initialized");
   return true;
+#endif
+}
+
+bool CameraSensor::getRuntimeConfig(RuntimeConfig& out) const {
+#if !CAMERA_SENSOR_ENABLED
+  (void)out;
+  return false;
+#else
+  if (!ready) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr) {
+    return false;
+  }
+
+  out.ready = true;
+  out.frameSize = static_cast<uint8_t>(sensor->status.framesize);
+  out.quality = sensor->status.quality;
+  out.brightness = sensor->status.brightness;
+  out.contrast = sensor->status.contrast;
+  out.saturation = sensor->status.saturation;
+  out.hmirror = sensor->status.hmirror != 0;
+  out.vflip = sensor->status.vflip != 0;
+  out.xclkHz = sensor->xclk_freq_hz;
+  return true;
+#endif
+}
+
+bool CameraSensor::setFrameSize(uint8_t frameSize) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)frameSize;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_framesize == nullptr) {
+    return false;
+  }
+
+  return sensor->set_framesize(sensor, static_cast<framesize_t>(frameSize)) == 0;
+#endif
+}
+
+bool CameraSensor::setXclkHz(int xclkHz) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)xclkHz;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_xclk == nullptr) {
+    return false;
+  }
+
+  return sensor->set_xclk(sensor, LEDC_TIMER_0, xclkHz) == 0;
+#endif
+}
+
+bool CameraSensor::setHmirror(bool enabled) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)enabled;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_hmirror == nullptr) {
+    return false;
+  }
+
+  return sensor->set_hmirror(sensor, enabled ? 1 : 0) == 0;
+#endif
+}
+
+bool CameraSensor::setVflip(bool enabled) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)enabled;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_vflip == nullptr) {
+    return false;
+  }
+
+  return sensor->set_vflip(sensor, enabled ? 1 : 0) == 0;
+#endif
+}
+
+bool CameraSensor::setQuality(uint8_t quality) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)quality;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_quality == nullptr) {
+    return false;
+  }
+
+  return sensor->set_quality(sensor, static_cast<int>(quality)) == 0;
+#endif
+}
+
+bool CameraSensor::setBrightness(int8_t level) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)level;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_brightness == nullptr) {
+    return false;
+  }
+
+  return sensor->set_brightness(sensor, static_cast<int>(level)) == 0;
+#endif
+}
+
+bool CameraSensor::setContrast(int8_t level) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)level;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_contrast == nullptr) {
+    return false;
+  }
+
+  return sensor->set_contrast(sensor, static_cast<int>(level)) == 0;
+#endif
+}
+
+bool CameraSensor::setSaturation(int8_t level) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)level;
+  return false;
+#else
+  if (!begin()) {
+    return false;
+  }
+
+  sensor_t* sensor = getSensorHandle();
+  if (sensor == nullptr || sensor->set_saturation == nullptr) {
+    return false;
+  }
+
+  return sensor->set_saturation(sensor, static_cast<int>(level)) == 0;
 #endif
 }
 

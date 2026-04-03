@@ -58,6 +58,8 @@ Supported request states:
 
 Supported request states:
 - `{"type":"camera","data":{"state":"specs"}}` -> returns camera capability envelope
+- `{"type":"camera","data":{"state":"config_get"}}` -> returns current camera runtime config (frameSize, xclk, mirror/flip, image tuning)
+- `{"type":"camera","data":{"state":"config_set","frameSize":6,"xclkHz":20000000,"hmirror":false,"vflip":true,"quality":12,"brightness":0,"contrast":0,"saturation":0}}` -> updates camera runtime config and returns updated values
 - `{"type":"camera","data":{"state":"frame"}}` -> captures one frame and sends JSON metadata + binary JPEG payload
 - `{"type":"camera","data":{"state":"stream","action":"start","intervalMs":500}}` -> starts periodic frame streaming for this client
 - `{"type":"camera","data":{"state":"stream","action":"stop"}}` -> stops periodic frame streaming for this client

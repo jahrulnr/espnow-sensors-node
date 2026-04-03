@@ -29,6 +29,8 @@ class CameraHook : public IWebsocketHook {
   StreamClient* ensureStreamClient(uint8_t clientId);
   bool ensureCameraReady();
   bool sendCameraSpecs(WebsocketGateway& gateway, uint8_t clientId);
+  bool sendCameraConfig(WebsocketGateway& gateway, uint8_t clientId, const char* state);
+  bool handleCameraConfigSet(WebsocketGateway& gateway, uint8_t clientId, ArduinoJson::JsonVariantConst requestData);
   bool captureAndSendFrame(WebsocketGateway& gateway, uint8_t clientId, const char* mode);
   bool setCameraStream(WebsocketGateway& gateway, uint8_t clientId, bool enabled, uint32_t intervalMs);
   void runStreams(WebsocketGateway& gateway);

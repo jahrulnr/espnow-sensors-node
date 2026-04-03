@@ -58,6 +58,8 @@ State request yang didukung:
 
 State request yang didukung:
 - `{"type":"camera","data":{"state":"specs"}}` -> mengembalikan envelope capability camera
+- `{"type":"camera","data":{"state":"config_get"}}` -> mengembalikan config runtime camera saat ini (frameSize, xclk, mirror/flip, tuning gambar)
+- `{"type":"camera","data":{"state":"config_set","frameSize":6,"xclkHz":20000000,"hmirror":false,"vflip":true,"quality":12,"brightness":0,"contrast":0,"saturation":0}}` -> memperbarui config runtime camera lalu mengembalikan nilai terbaru
 - `{"type":"camera","data":{"state":"frame"}}` -> capture 1 frame lalu kirim metadata JSON + payload JPEG binary
 - `{"type":"camera","data":{"state":"stream","action":"start","intervalMs":500}}` -> mulai streaming frame periodik untuk client ini
 - `{"type":"camera","data":{"state":"stream","action":"stop"}}` -> stop streaming frame periodik untuk client ini

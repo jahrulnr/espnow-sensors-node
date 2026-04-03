@@ -46,6 +46,20 @@ bool CameraHook::handleRequest(WebsocketGateway& gateway, uint8_t clientId, Ardu
     return sendCameraSpecs(gateway, clientId);
   }
 
+  if (strEq(state, "config_get")) {
+    return gateway.sendError(clientId,
+                             type(),
+                             "camera_disabled",
+                             "Camera is not enabled in this build profile");
+  }
+
+  if (strEq(state, "config_set")) {
+    return gateway.sendError(clientId,
+                             type(),
+                             "camera_disabled",
+                             "Camera is not enabled in this build profile");
+  }
+
   return gateway.sendError(clientId,
                            type(),
                            "camera_disabled",
@@ -57,6 +71,14 @@ bool CameraHook::handleRequest(WebsocketGateway& gateway, uint8_t clientId, Ardu
 
   if (strEq(state, "frame")) {
     return captureAndSendFrame(gateway, clientId, "single");
+  }
+
+  if (strEq(state, "config_get")) {
+    return sendCameraConfig(gateway, clientId, "config_get");
+  }
+
+  if (strEq(state, "config_set")) {
+    return handleCameraConfigSet(gateway, clientId, requestData);
   }
 
   if (strEq(state, "stream")) {
@@ -164,6 +186,168 @@ bool CameraHook::sendCameraSpecs(WebsocketGateway& gateway, uint8_t clientId) {
 #endif
 
   return gateway.sendEnvelope(clientId, type(), data.as<ArduinoJson::JsonVariantConst>());
+}
+
+bool CameraHook::sendCameraConfig(WebsocketGateway& gateway, uint8_t clientId, const char* state) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)gateway;
+  (void)clientId;
+  (void)state;
+  return false;
+#else
+  if (!ensureCameraReady()) {
+    return gateway.sendError(clientId, type(), "camera_init_failed", "Camera initialization failed");
+  }
+
+  app::sensor::CameraSensor::RuntimeConfig cfg;
+  if (!app::sensor::cameraSensor.getRuntimeConfig(cfg)) {
+    return gateway.sendError(clientId, type(), "camera_status_failed", "Failed to read camera runtime config");
+  }
+
+  SpiJsonDocument data;
+  data["state"] = state == nullptr ? "config_get" : state;
+  data["ready"] = cfg.ready;
+  data["frameSize"] = cfg.frameSize;
+  data["quality"] = cfg.quality;
+  data["brightness"] = cfg.brightness;
+  data["contrast"] = cfg.contrast;
+  data["saturation"] = cfg.saturation;
+  data["hmirror"] = cfg.hmirror;
+  data["vflip"] = cfg.vflip;
+  data["xclkHz"] = cfg.xclkHz;
+
+  return gateway.sendEnvelope(clientId, type(), data.as<ArduinoJson::JsonVariantConst>());
+#endif
+}
+
+bool CameraHook::handleCameraConfigSet(WebsocketGateway& gateway,
+                                       uint8_t clientId,
+                                       ArduinoJson::JsonVariantConst requestData) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)gateway;
+  (void)clientId;
+  (void)requestData;
+  return false;
+#else
+  if (!ensureCameraReady()) {
+    return gateway.sendError(clientId, type(), "camera_init_failed", "Camera initialization failed");
+  }
+
+  bool changed = false;
+
+  if (!requestData["frameSize"].isNull()) {
+    if (!requestData["frameSize"].is<uint8_t>()) {
+      return gateway.sendError(clientId, type(), "invalid_framesize", "frameSize must be uint8");
+    }
+    const uint8_t frameSize = requestData["frameSize"].as<uint8_t>();
+    if (frameSize >= static_cast<uint8_t>(FRAMESIZE_INVALID)) {
+      return gateway.sendError(clientId, type(), "invalid_framesize", "frameSize out of range");
+    }
+    if (!app::sensor::cameraSensor.setFrameSize(frameSize)) {
+      return gateway.sendError(clientId, type(), "set_framesize_failed", "Failed to apply frameSize");
+    }
+    changed = true;
+  }
+
+  if (!requestData["xclkHz"].isNull()) {
+    if (!requestData["xclkHz"].is<int>()) {
+      return gateway.sendError(clientId, type(), "invalid_xclk", "xclkHz must be integer");
+    }
+    const int xclkHz = requestData["xclkHz"].as<int>();
+    if (xclkHz < 1000000 || xclkHz > 30000000) {
+      return gateway.sendError(clientId, type(), "invalid_xclk", "xclkHz must be between 1000000 and 30000000");
+    }
+    if (!app::sensor::cameraSensor.setXclkHz(xclkHz)) {
+      return gateway.sendError(clientId, type(), "set_xclk_failed", "Failed to apply xclkHz");
+    }
+    changed = true;
+  }
+
+  if (!requestData["hmirror"].isNull()) {
+    if (!requestData["hmirror"].is<bool>()) {
+      return gateway.sendError(clientId, type(), "invalid_hmirror", "hmirror must be boolean");
+    }
+    if (!app::sensor::cameraSensor.setHmirror(requestData["hmirror"].as<bool>())) {
+      return gateway.sendError(clientId, type(), "set_hmirror_failed", "Failed to apply hmirror");
+    }
+    changed = true;
+  }
+
+  if (!requestData["vflip"].isNull()) {
+    if (!requestData["vflip"].is<bool>()) {
+      return gateway.sendError(clientId, type(), "invalid_vflip", "vflip must be boolean");
+    }
+    if (!app::sensor::cameraSensor.setVflip(requestData["vflip"].as<bool>())) {
+      return gateway.sendError(clientId, type(), "set_vflip_failed", "Failed to apply vflip");
+    }
+    changed = true;
+  }
+
+  if (!requestData["quality"].isNull()) {
+    if (!requestData["quality"].is<uint8_t>()) {
+      return gateway.sendError(clientId, type(), "invalid_quality", "quality must be uint8");
+    }
+    const uint8_t quality = requestData["quality"].as<uint8_t>();
+    if (quality > 63) {
+      return gateway.sendError(clientId, type(), "invalid_quality", "quality must be 0..63");
+    }
+    if (!app::sensor::cameraSensor.setQuality(quality)) {
+      return gateway.sendError(clientId, type(), "set_quality_failed", "Failed to apply quality");
+    }
+    changed = true;
+  }
+
+  if (!requestData["brightness"].isNull()) {
+    if (!requestData["brightness"].is<int8_t>() && !requestData["brightness"].is<int>()) {
+      return gateway.sendError(clientId, type(), "invalid_brightness", "brightness must be integer");
+    }
+    const int brightness = requestData["brightness"].as<int>();
+    if (brightness < -2 || brightness > 2) {
+      return gateway.sendError(clientId, type(), "invalid_brightness", "brightness must be -2..2");
+    }
+    if (!app::sensor::cameraSensor.setBrightness(static_cast<int8_t>(brightness))) {
+      return gateway.sendError(clientId, type(), "set_brightness_failed", "Failed to apply brightness");
+    }
+    changed = true;
+  }
+
+  if (!requestData["contrast"].isNull()) {
+    if (!requestData["contrast"].is<int8_t>() && !requestData["contrast"].is<int>()) {
+      return gateway.sendError(clientId, type(), "invalid_contrast", "contrast must be integer");
+    }
+    const int contrast = requestData["contrast"].as<int>();
+    if (contrast < -2 || contrast > 2) {
+      return gateway.sendError(clientId, type(), "invalid_contrast", "contrast must be -2..2");
+    }
+    if (!app::sensor::cameraSensor.setContrast(static_cast<int8_t>(contrast))) {
+      return gateway.sendError(clientId, type(), "set_contrast_failed", "Failed to apply contrast");
+    }
+    changed = true;
+  }
+
+  if (!requestData["saturation"].isNull()) {
+    if (!requestData["saturation"].is<int8_t>() && !requestData["saturation"].is<int>()) {
+      return gateway.sendError(clientId, type(), "invalid_saturation", "saturation must be integer");
+    }
+    const int saturation = requestData["saturation"].as<int>();
+    if (saturation < -2 || saturation > 2) {
+      return gateway.sendError(clientId, type(), "invalid_saturation", "saturation must be -2..2");
+    }
+    if (!app::sensor::cameraSensor.setSaturation(static_cast<int8_t>(saturation))) {
+      return gateway.sendError(clientId, type(), "set_saturation_failed", "Failed to apply saturation");
+    }
+    changed = true;
+  }
+
+  if (!changed) {
+    return gateway.sendError(clientId,
+                             type(),
+                             "invalid_config_request",
+                             "Provide at least one field: frameSize, xclkHz, hmirror, vflip, quality, brightness, contrast, saturation");
+  }
+
+  return sendCameraConfig(gateway, clientId, "config_set");
+#endif
 }
 
 bool CameraHook::captureAndSendFrame(WebsocketGateway& gateway, uint8_t clientId, const char* mode) {
