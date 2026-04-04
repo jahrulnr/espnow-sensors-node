@@ -16,6 +16,10 @@ void setup() {
 	heap_caps_malloc_extmem_enable(0);
 	#endif
 
+	#ifdef ESP32
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
+	#endif
+
 	// boot-time hooks (sensor init + boot sample logs)
 	app::boot::run();
 

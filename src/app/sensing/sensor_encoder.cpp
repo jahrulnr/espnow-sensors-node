@@ -55,6 +55,8 @@ bool encodeSampleToStateBinary(const SensorSample& sample,
       state.distanceCm = sample.mmwave.distanceCm;
       state.frameCount = sample.mmwave.frameCount;
       state.byteCount = sample.mmwave.byteCount;
+      state.targetState = sample.mmwave.targetState;
+      state.reportType = sample.mmwave.reportType;
 
       const size_t bytes = sizeof(state);
       if (outCapacity < bytes) {

@@ -20,6 +20,13 @@ static_assert(static_cast<uint8_t>(state_binary::Type::ServoAck) == 14, "ServoAc
 static_assert(static_cast<uint8_t>(state_binary::Type::ModuleListReq) == 15, "ModuleListReq type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::ModuleInfo) == 16, "ModuleInfo type changed");
 static_assert(static_cast<uint8_t>(state_binary::Type::CameraCapture) == 17, "CameraCapture type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::WifiKeyExchange) == 18, "WifiKeyExchange type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::WifiCredentialsSecure) == 19,
+              "WifiCredentialsSecure type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::MmwaveRangeConfig) == 20,
+              "MmwaveRangeConfig type changed");
+static_assert(static_cast<uint8_t>(state_binary::Type::WifiWsEndpoint) == 21,
+              "WifiWsEndpoint type changed");
 
 static_assert(sizeof(state_binary::Header) == 4, "state_binary::Header size changed");
 static_assert(sizeof(state_binary::SensorState) <= MAX_PAYLOAD_SIZE, "SensorState exceeds ESP-NOW payload");
@@ -37,6 +44,14 @@ static_assert(sizeof(state_binary::ModuleInfoState) <= MAX_PAYLOAD_SIZE,
               "ModuleInfoState exceeds ESP-NOW payload");
 static_assert(sizeof(state_binary::CameraCaptureState) <= MAX_PAYLOAD_SIZE,
               "CameraCaptureState exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::WifiKeyExchangeState) <= MAX_PAYLOAD_SIZE,
+              "WifiKeyExchangeState exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::WifiCredentialsSecureCommand) <= MAX_PAYLOAD_SIZE,
+              "WifiCredentialsSecureCommand exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::MmwaveRangeConfigCommand) <= MAX_PAYLOAD_SIZE,
+              "MmwaveRangeConfigCommand exceeds ESP-NOW payload");
+static_assert(sizeof(state_binary::WifiWsEndpointState) <= MAX_PAYLOAD_SIZE,
+              "WifiWsEndpointState exceeds ESP-NOW payload");
 
 static_assert(std::is_trivially_copyable<state_binary::SensorState>::value,
               "SensorState must remain trivially copyable");
@@ -54,5 +69,13 @@ static_assert(std::is_trivially_copyable<state_binary::ModuleInfoState>::value,
               "ModuleInfoState must remain trivially copyable");
 static_assert(std::is_trivially_copyable<state_binary::CameraCaptureState>::value,
               "CameraCaptureState must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::WifiKeyExchangeState>::value,
+              "WifiKeyExchangeState must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::WifiCredentialsSecureCommand>::value,
+              "WifiCredentialsSecureCommand must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::MmwaveRangeConfigCommand>::value,
+              "MmwaveRangeConfigCommand must remain trivially copyable");
+static_assert(std::is_trivially_copyable<state_binary::WifiWsEndpointState>::value,
+              "WifiWsEndpointState must remain trivially copyable");
 
 }  // namespace app::espnow

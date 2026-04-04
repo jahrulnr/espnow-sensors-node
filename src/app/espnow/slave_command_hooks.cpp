@@ -5,6 +5,9 @@
 
 #include "app/actuation/actuator_manager.h"
 #include "app/network/wifi_manager.h"
+#include "app/security/wifi_secure_channel.h"
+#include "app/sensor/camera_sensor.h"
+#include "app/sensor/mmwave_sensor.h"
 #include "app/sensing/sensor_manager.h"
 
 #include <app_config.h>
@@ -46,6 +49,84 @@ bool sendFeaturesStateNow(SlaveNode& node, const char* logTag) {
   const bool sent = node.sendStateBinary(&state, sizeof(state));
   if (!sent) {
     ESP_LOGW(logTag, "Failed sending feature state");
+  }
+  return sent;
+}
+
+bool sendCameraCaptureStateNow(SlaveNode& node, const char* logTag) {
+#if !CAMERA_SENSOR_ENABLED
+  (void)node;
+  (void)logTag;
+  return true;
+#else
+  app::sensor::CameraSensor::CaptureMeta meta{};
+  if (!app::sensor::cameraSensor.captureMeta(meta)) {
+    ESP_LOGW(logTag, "Camera capture meta unavailable");
+    return false;
+  }
+
+  app::espnow::state_binary::CameraCaptureState state = {};
+  app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::CameraCapture);
+  state.width = meta.width;
+  state.height = meta.height;
+  state.frameBytes = meta.frameBytes;
+  state.latencyMs = meta.latencyMs;
+  state.frameFormat = meta.frameFormat;
+  state.cameraType = meta.cameraType;
+
+  const bool sent = node.sendStateBinary(&state, sizeof(state));
+  if (!sent) {
+    ESP_LOGW(logTag, "Failed sending camera capture state");
+  }
+  return sent;
+#endif
+}
+
+bool sendWifiKeyExchangeNow(SlaveNode& node, const char* logTag) {
+  if (!app::security::wifiSecureChannel.begin()) {
+    ESP_LOGW(logTag, "Secure channel unavailable");
+    return false;
+  }
+
+  app::espnow::state_binary::WifiKeyExchangeState state = {};
+  if (!app::security::wifiSecureChannel.fillKeyExchangeState(state)) {
+    ESP_LOGW(logTag, "Failed preparing wifi key exchange state");
+    return false;
+  }
+
+  const bool sent = node.sendStateBinary(&state, sizeof(state));
+  if (!sent) {
+    ESP_LOGW(logTag, "Failed sending wifi key exchange state");
+  }
+  return sent;
+}
+
+bool sendWifiWsEndpointNow(SlaveNode& node, const char* logTag) {
+  app::espnow::state_binary::WifiWsEndpointState state = {};
+  app::espnow::state_binary::initHeader(state.header, app::espnow::state_binary::Type::WifiWsEndpoint);
+
+  state.connected = app::network::wifiManager.isConnected() ? 1 : 0;
+  state.port = static_cast<uint16_t>(WEBSOCKET_SERVER_PORT);
+
+  const char* wsPath = WEBSOCKET_SERVER_PATH;
+  if (wsPath != nullptr) {
+    strncpy(state.path, wsPath, sizeof(state.path) - 1);
+    state.path[sizeof(state.path) - 1] = '\0';
+  }
+
+  const char* hostname = app::network::wifiManager.getActiveHostname();
+  if (hostname != nullptr) {
+    strncpy(state.hostname, hostname, sizeof(state.hostname) - 1);
+    state.hostname[sizeof(state.hostname) - 1] = '\0';
+  }
+
+  if (!app::network::wifiManager.getLocalIpBytes(state.ip)) {
+    memset(state.ip, 0, sizeof(state.ip));
+  }
+
+  const bool sent = node.sendStateBinary(&state, sizeof(state));
+  if (!sent) {
+    ESP_LOGW(logTag, "Failed sending WiFi websocket endpoint state");
   }
   return sent;
 }
@@ -156,6 +237,9 @@ bool handleCommandPacket(SlaveNode& node,
                                                 sizeof(app::espnow::state_binary::IdentityReqCommand))) {
     sendIdentityStateNow(node, logTag);
     sendFeaturesStateNow(node, logTag);
+    sendCameraCaptureStateNow(node, logTag);
+    sendWifiKeyExchangeNow(node, logTag);
+    sendWifiWsEndpointNow(node, logTag);
     return true;
   }
 
@@ -172,6 +256,56 @@ bool handleCommandPacket(SlaveNode& node,
     if (!app::network::wifiManager.requestConnect(ssid, password)) {
       ESP_LOGW(logTag, "WiFi credentials command rejected");
     }
+    return true;
+  }
+
+  if (app::espnow::state_binary::hasTypeAndSize(payload,
+                                                payloadSize,
+                                                app::espnow::state_binary::Type::WifiCredentialsSecure,
+                                                sizeof(app::espnow::state_binary::WifiCredentialsSecureCommand))) {
+    if (!app::security::wifiSecureChannel.begin()) {
+      ESP_LOGW(logTag, "Secure channel unavailable for WifiCredentialsSecure");
+      return true;
+    }
+
+    const auto* command = reinterpret_cast<const app::espnow::state_binary::WifiCredentialsSecureCommand*>(payload);
+    char ssid[33] = {0};
+    char password[65] = {0};
+    if (!app::security::wifiSecureChannel.decryptCredentials(*command,
+                                                             ssid,
+                                                             sizeof(ssid),
+                                                             password,
+                                                             sizeof(password))) {
+      ESP_LOGW(logTag, "Secure WiFi credentials command rejected");
+      return true;
+    }
+
+    if (!app::network::wifiManager.requestConnect(ssid, password)) {
+      ESP_LOGW(logTag, "Secure WiFi credentials connect request rejected");
+    }
+
+    std::memset(password, 0, sizeof(password));
+    return true;
+  }
+
+  if (app::espnow::state_binary::hasTypeAndSize(payload,
+                                                payloadSize,
+                                                app::espnow::state_binary::Type::MmwaveRangeConfig,
+                                                sizeof(app::espnow::state_binary::MmwaveRangeConfigCommand))) {
+    const auto* command = reinterpret_cast<const app::espnow::state_binary::MmwaveRangeConfigCommand*>(payload);
+    const bool persist = command->persistToNvs != 0;
+    const bool stored = app::sensor::mmwaveSensor.setMaxDetectionRangeCm(command->maxDistanceCm, persist);
+    if (persist && !stored) {
+      ESP_LOGW(logTag,
+               "MmwaveRangeConfig apply failed to persist maxDistanceCm=%u",
+               static_cast<unsigned>(command->maxDistanceCm));
+      return true;
+    }
+
+    ESP_LOGI(logTag,
+             "MmwaveRangeConfig applied maxDistanceCm=%u persist=%u",
+             static_cast<unsigned>(command->maxDistanceCm),
+             persist ? 1U : 0U);
     return true;
   }
 

@@ -9,6 +9,8 @@ class WifiManager {
   bool isEnabled() const;
   bool isConnected() const;
   bool isChannelLocked() const;
+  const char* getActiveHostname() const;
+  bool getLocalIpBytes(uint8_t outIp[4]) const;
 
   bool requestConnect(const char* ssid, const char* password);
   void loop();

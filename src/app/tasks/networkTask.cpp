@@ -1,10 +1,12 @@
 #include "networkTask.h"
 
 #include "app/espnow/slave.h"
+#include "app/espnow/slave_command_hooks.h"
 #include "app/espnow/state_binary.h"
 #include "app/power/sleep_guard.h"
 #include "app/sensing/sensor_encoder.h"
 #include "app/sensing/sensor_manager.h"
+#include "app/security/wifi_secure_channel.h"
 
 #include <app_config.h>
 #include <app/espnow/protocol.h>
@@ -24,6 +26,10 @@ static constexpr uint16_t NETWORK_TASK_STACK = 8192;
 static constexpr UBaseType_t NETWORK_TASK_PRIORITY = 2;
 #if !ENABLE_POWERSAVE
 static constexpr size_t OUTGOING_QUEUE_DEPTH = 10;
+static constexpr uint32_t CAMERA_META_RETRY_MS = 2000;
+#endif
+#if ENABLE_WIFI_MODE
+static constexpr uint32_t WIFI_SECURE_INIT_RETRY_MS = 10000;
 #endif
 
 RTC_DATA_ATTR bool hasSeenMasterBefore = false;
@@ -38,6 +44,9 @@ TaskHandle_t networkTaskHandle = nullptr;
 #if !ENABLE_POWERSAVE
 QueueHandle_t outgoingQueue = nullptr;
 #endif
+#if ENABLE_WIFI_MODE
+uint32_t lastWifiSecureInitAttemptMs = 0;
+#endif
 
 uint32_t withJitterMs(uint32_t baseMs, uint32_t jitterMaxMs) {
   if (jitterMaxMs == 0) {
@@ -49,6 +58,20 @@ uint32_t withJitterMs(uint32_t baseMs, uint32_t jitterMaxMs) {
 void delayWithJitterMs(uint32_t baseMs, uint32_t jitterMaxMs) {
   vTaskDelay(pdMS_TO_TICKS(withJitterMs(baseMs, jitterMaxMs)));
 }
+
+#if ENABLE_WIFI_MODE
+void ensureWifiSecureChannelReady() {
+  const uint32_t nowMs = millis();
+  if (lastWifiSecureInitAttemptMs != 0 && (nowMs - lastWifiSecureInitAttemptMs) < WIFI_SECURE_INIT_RETRY_MS) {
+    return;
+  }
+
+  lastWifiSecureInitAttemptMs = nowMs;
+  if (!app::security::wifiSecureChannel.begin()) {
+    ESP_LOGW(TAG, "Secure channel init pending, retry in %u ms", static_cast<unsigned>(WIFI_SECURE_INIT_RETRY_MS));
+  }
+}
+#endif
 
 void sendIdentityStateNow() {
 #if NODE_SEND_IDENTITY_STATE
@@ -223,6 +246,10 @@ void runPowerSaveCycle() {
     return;
   }
 
+#if ENABLE_WIFI_MODE
+  ensureWifiSecureChannelReady();
+#endif
+
   // Force a fresh master link detection in this wake cycle.
   app::espnow::espnowSlave.resetMasterTracking();
   ESP_LOGI(TAG, "Waiting for master link");
@@ -268,6 +295,10 @@ void networkTaskRunner(void*) {
   // start espnow radio
   app::espnow::espnowSlave.begin(app::espnow::DEFAULT_CHANNEL);
 
+#if ENABLE_WIFI_MODE
+  ensureWifiSecureChannelReady();
+#endif
+
   // prepare outgoing queue
   outgoingQueue = xQueueCreate(OUTGOING_QUEUE_DEPTH, sizeof(OutgoingJob));
   if (outgoingQueue == nullptr) {
@@ -275,9 +306,15 @@ void networkTaskRunner(void*) {
   }
 
   bool wasMasterLinked = false;
+  bool cameraMetaSentForLink = false;
+  uint32_t lastCameraMetaAttemptMs = 0;
 
   while (true) {
     app::espnow::espnowSlave.loop();
+
+#if ENABLE_WIFI_MODE
+    ensureWifiSecureChannelReady();
+#endif
 
     // handle outgoing queue
     if (outgoingQueue != nullptr) {
@@ -294,7 +331,23 @@ void networkTaskRunner(void*) {
     if (isMasterLinked && !wasMasterLinked) {
       sendIdentityStateNow();
       sendFeaturesStateNow();
+      cameraMetaSentForLink = false;
+      lastCameraMetaAttemptMs = 0;
     }
+
+    if (isMasterLinked && !cameraMetaSentForLink) {
+      const uint32_t nowMs = millis();
+      if (lastCameraMetaAttemptMs == 0 || (nowMs - lastCameraMetaAttemptMs) >= CAMERA_META_RETRY_MS) {
+        lastCameraMetaAttemptMs = nowMs;
+        cameraMetaSentForLink = app::espnow::hooks::sendCameraCaptureStateNow(app::espnow::espnowSlave, TAG);
+      }
+    }
+
+    if (!isMasterLinked && wasMasterLinked) {
+      cameraMetaSentForLink = false;
+      lastCameraMetaAttemptMs = 0;
+    }
+
     wasMasterLinked = isMasterLinked;
 
     vTaskDelay(pdMS_TO_TICKS(10));

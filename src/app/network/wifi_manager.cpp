@@ -51,8 +51,57 @@ bool WifiManager::isConnected() const {
 
 bool WifiManager::isChannelLocked() const {
 #if ENABLE_WIFI_MODE
-  return connecting || isConnected();
+  if (isConnected()) {
+    return true;
+  }
+
+#if WIFI_LOCK_CHANNEL_WHILE_CONNECTING
+  return connecting;
 #else
+  return false;
+#endif
+#else
+  return false;
+#endif
+}
+
+const char* WifiManager::getActiveHostname() const {
+#if ENABLE_WIFI_MODE
+  if (activeHostname[0] != '\0') {
+    return activeHostname;
+  }
+
+  return WIFI_CLIENT_HOSTNAME;
+#else
+  return "";
+#endif
+}
+
+bool WifiManager::getLocalIpBytes(uint8_t outIp[4]) const {
+  if (outIp == nullptr) {
+    return false;
+  }
+
+#if ENABLE_WIFI_MODE
+  if (!isConnected()) {
+    outIp[0] = 0;
+    outIp[1] = 0;
+    outIp[2] = 0;
+    outIp[3] = 0;
+    return false;
+  }
+
+  const IPAddress ip = WiFi.localIP();
+  outIp[0] = ip[0];
+  outIp[1] = ip[1];
+  outIp[2] = ip[2];
+  outIp[3] = ip[3];
+  return true;
+#else
+  outIp[0] = 0;
+  outIp[1] = 0;
+  outIp[2] = 0;
+  outIp[3] = 0;
   return false;
 #endif
 }
@@ -128,6 +177,8 @@ void WifiManager::loop() {
 
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(activeHostname);
+    WiFi.persistent(true);
+    WiFi.setTxPower(WIFI_POWER_21dBm);
     WiFi.setAutoReconnect(true);
     WiFi.begin(pendingSsid, pendingPassword);
     ESP_LOGI(TAG, "Connecting WiFi SSID '%s' with hostname '%s'", pendingSsid, activeHostname);

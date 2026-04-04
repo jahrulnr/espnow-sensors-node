@@ -106,6 +106,7 @@ void SlaveNode::pruneMasters(uint32_t nowMs) {
              masters[i].mac[5]);
     masters[i].used = false;
     masters[i].lastSeenMs = 0;
+    masters[i].txFailStreak = 0;
     masters[i].channel = DEFAULT_CHANNEL;
     memset(masters[i].mac, 0, sizeof(masters[i].mac));
     if (masterCount > 0) {
@@ -137,6 +138,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
 
     masters[existingIndex].channel = channel;
     masters[existingIndex].lastSeenMs = seenMs;
+    masters[existingIndex].txFailStreak = 0;
     applyPeerRateConfig(mac);
     app::espnow::runtime::updateMasterCacheEntry(mac, channel);
     return true;
@@ -162,6 +164,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
       memcpy(masters[i].mac, mac, 6);
       masters[i].channel = channel;
       masters[i].lastSeenMs = seenMs;
+      masters[i].txFailStreak = 0;
       masterCount++;
       applyPeerRateConfig(mac);
       app::espnow::runtime::updateMasterCacheEntry(mac, channel);
@@ -202,6 +205,7 @@ bool SlaveNode::addMasterPeer(const uint8_t mac[6], uint8_t channel, uint32_t se
     memcpy(masters[i].mac, mac, 6);
     masters[i].channel = channel;
     masters[i].lastSeenMs = seenMs;
+    masters[i].txFailStreak = 0;
     masterCount++;
     applyPeerRateConfig(mac);
     app::espnow::runtime::updateMasterCacheEntry(mac, channel);
@@ -327,6 +331,13 @@ void SlaveNode::onSendStatic(const esp_now_send_info_t* tx_info, esp_now_send_st
     return;
   }
 
+  const uint8_t* destinationMac = (tx_info != nullptr) ? tx_info->des_addr : nullptr;
+  const int masterIndex = activeInstance->findMasterIndex(destinationMac);
+
+  if (status == ESP_NOW_SEND_SUCCESS && masterIndex >= 0 && activeInstance->masters[masterIndex].used) {
+    activeInstance->masters[masterIndex].txFailStreak = 0;
+  }
+
   if (status != ESP_NOW_SEND_SUCCESS) {
     uint8_t currentPrimary = 0;
     wifi_second_chan_t currentSecondary = WIFI_SECOND_CHAN_NONE;
@@ -337,15 +348,43 @@ void SlaveNode::onSendStatic(const esp_now_send_info_t* tx_info, esp_now_send_st
     if (tx_info != nullptr && tx_info->des_addr != nullptr) {
       ESP_LOGW(kSlaveLogTag,
                "TX failed -> %02X:%02X:%02X:%02X:%02X:%02X (ch=%u)",
-               tx_info->des_addr[0],
-               tx_info->des_addr[1],
-               tx_info->des_addr[2],
-               tx_info->des_addr[3],
-               tx_info->des_addr[4],
-               tx_info->des_addr[5],
+               destinationMac[0],
+               destinationMac[1],
+               destinationMac[2],
+               destinationMac[3],
+               destinationMac[4],
+               destinationMac[5],
                static_cast<unsigned>(currentPrimary));
     } else {
       ESP_LOGW(kSlaveLogTag, "TX failed (no tx_info, ch=%u)", static_cast<unsigned>(currentPrimary));
+    }
+
+    if (masterIndex >= 0 && activeInstance->masters[masterIndex].used) {
+      auto& peer = activeInstance->masters[masterIndex];
+      if (peer.txFailStreak < 255) {
+        peer.txFailStreak++;
+      }
+
+      if (peer.txFailStreak >= kMasterTxFailEvictStreak) {
+        ESP_LOGW(kSlaveLogTag,
+                 "Evicting stale master after TX fail streak=%u: %02X:%02X:%02X:%02X:%02X:%02X",
+                 static_cast<unsigned>(peer.txFailStreak),
+                 peer.mac[0],
+                 peer.mac[1],
+                 peer.mac[2],
+                 peer.mac[3],
+                 peer.mac[4],
+                 peer.mac[5]);
+
+        peer.used = false;
+        peer.lastSeenMs = 0;
+        peer.txFailStreak = 0;
+        peer.channel = DEFAULT_CHANNEL;
+        memset(peer.mac, 0, sizeof(peer.mac));
+        if (activeInstance->masterCount > 0) {
+          activeInstance->masterCount--;
+        }
+      }
     }
   }
 
@@ -399,6 +438,7 @@ void SlaveNode::onReceiveStatic(const esp_now_recv_info_t* recv_info, const uint
   } else {
     activeInstance->masters[trackedIndex].lastSeenMs = millis();
     activeInstance->masters[trackedIndex].channel = currentChannel;
+    activeInstance->masters[trackedIndex].txFailStreak = 0;
   }
 
   if (type == PacketType::COMMAND) {

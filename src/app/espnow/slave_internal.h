@@ -12,6 +12,7 @@ inline constexpr uint8_t kMaxScanChannel = 13;
 inline constexpr uint32_t kChannelScanIntervalMs = NODE_SCAN_CHANNEL_DWELL_MS;
 inline constexpr uint32_t kMasterTimeoutMs = 12000;
 inline constexpr uint32_t kHelloIntervalMs = 7000;
+inline constexpr uint8_t kMasterTxFailEvictStreak = 24;
 inline constexpr uint8_t kBroadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 }  // namespace app::espnow

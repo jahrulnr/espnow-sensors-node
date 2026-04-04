@@ -5,10 +5,9 @@
 #include <app_config.h>
 
 #include <Preferences.h>
+#include <WiFi.h>
 #include <cstring>
-#include <esp_event.h>
 #include <esp_log.h>
-#include <esp_netif.h>
 #include <esp_wifi.h>
 
 namespace app::espnow::runtime {
@@ -202,51 +201,33 @@ bool shouldUseCachedScanOnly(const char* logTag) {
   return gMasterCache.entryCount > 0;
 }
 
+uint8_t firstCachedMasterChannel() {
+  for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
+    if (gMasterCache.entries[i].used == 0) {
+      continue;
+    }
+
+    return clampChannel(gMasterCache.entries[i].channel);
+  }
+
+  return 0;
+}
+
 }  // namespace
 
 bool ensureWifiStaReady(const char* logTag) {
   ESP_LOGI(logTag, "begin(): init WiFi STA core");
 
-  esp_err_t err = esp_netif_init();
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGE(logTag, "esp_netif_init failed: %s", esp_err_to_name(err));
+  // Keep STA initialization on Arduino WiFi stack to avoid duplicate default
+  // netif creation and mixed init ownership with later WiFi.begin() calls.
+  if (!WiFi.mode(WIFI_STA)) {
+    ESP_LOGE(logTag, "WiFi.mode(WIFI_STA) failed");
     return false;
   }
 
-  err = esp_event_loop_create_default();
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGE(logTag, "esp_event_loop_create_default failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  static bool netifCreated = false;
-  if (!netifCreated) {
-    esp_netif_create_default_wifi_sta();
-    netifCreated = true;
-  }
-
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  err = esp_wifi_init(&cfg);
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGE(logTag, "esp_wifi_init failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+  esp_err_t err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
   if (err != ESP_OK) {
     ESP_LOGE(logTag, "esp_wifi_set_storage failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  err = esp_wifi_set_mode(WIFI_MODE_STA);
-  if (err != ESP_OK) {
-    ESP_LOGE(logTag, "esp_wifi_set_mode failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  err = esp_wifi_start();
-  if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-    ESP_LOGE(logTag, "esp_wifi_start failed: %s", esp_err_to_name(err));
     return false;
   }
 
@@ -266,6 +247,14 @@ uint8_t chooseInitialScanChannel(uint8_t requestedChannel, const char* logTag) {
              startChannel,
              static_cast<unsigned>(NODE_MASTER_CACHE_FAST_SCAN_MAX_HOPS));
     return startChannel;
+  }
+
+  const uint8_t cachedChannel = firstCachedMasterChannel();
+  if (cachedChannel >= MIN_SCAN_CHANNEL && cachedChannel <= MAX_SCAN_CHANNEL) {
+    ESP_LOGI(logTag,
+             "Full scan mode: start from cached channel %u before sweeping",
+             static_cast<unsigned>(cachedChannel));
+    return cachedChannel;
   }
 
   return requestedChannel;
@@ -305,11 +294,12 @@ void updateMasterCacheEntry(const uint8_t mac[6], uint8_t channel) {
 
   ensureMasterCacheLoaded("espnow_slave");
   const uint8_t normalizedChannel = clampChannel(channel);
-
   for (size_t i = 0; i < CACHE_MAX_ENTRIES; ++i) {
     if (gMasterCache.entries[i].used != 0 && memcmp(gMasterCache.entries[i].mac, mac, 6) == 0) {
-      gMasterCache.entries[i].channel = normalizedChannel;
-      recountMasterCacheEntries(gMasterCache);
+      if (gMasterCache.entries[i].channel != normalizedChannel) {
+        gMasterCache.entries[i].channel = normalizedChannel;
+        persistMasterCacheToNvs(gMasterCache, "espnow_slave");
+      }
       return;
     }
   }
@@ -324,6 +314,7 @@ void updateMasterCacheEntry(const uint8_t mac[6], uint8_t channel) {
     gMasterCache.entries[i].channel = normalizedChannel;
     gMasterCache.entries[i].reserved = 0;
     recountMasterCacheEntries(gMasterCache);
+    persistMasterCacheToNvs(gMasterCache, "espnow_slave");
     return;
   }
 
@@ -332,6 +323,7 @@ void updateMasterCacheEntry(const uint8_t mac[6], uint8_t channel) {
   gMasterCache.entries[0].channel = normalizedChannel;
   gMasterCache.entries[0].reserved = 0;
   recountMasterCacheEntries(gMasterCache);
+  persistMasterCacheToNvs(gMasterCache, "espnow_slave");
 }
 
 void applyWakeResultToCache(bool linked, const char* logTag) {

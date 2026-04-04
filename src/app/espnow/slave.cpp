@@ -13,6 +13,17 @@
 
 namespace app::espnow {
 
+namespace {
+
+constexpr uint32_t kWifiWsEndpointRefreshMs = 30000;
+
+bool gWifiWsEndpointKnown = false;
+bool gWifiWsEndpointConnected = false;
+uint8_t gWifiWsEndpointIp[4] = {0, 0, 0, 0};
+uint32_t gLastWifiWsEndpointSentMs = 0;
+
+}  // namespace
+
 SlaveNode* SlaveNode::activeInstance = nullptr;
 SlaveNode espnowSlave;
 
@@ -97,6 +108,28 @@ void SlaveNode::loop() {
   const uint32_t now = millis();
   pruneMasters(now);
 
+  if (masterCount == 0) {
+    gWifiWsEndpointKnown = false;
+  } else {
+    bool currentConnected = app::network::wifiManager.isConnected();
+    uint8_t currentIp[4] = {0, 0, 0, 0};
+    app::network::wifiManager.getLocalIpBytes(currentIp);
+
+    const bool ipChanged = memcmp(currentIp, gWifiWsEndpointIp, sizeof(currentIp)) != 0;
+    const bool statusChanged = !gWifiWsEndpointKnown || currentConnected != gWifiWsEndpointConnected || ipChanged;
+    const bool periodicRefresh =
+        currentConnected && ((now - gLastWifiWsEndpointSentMs) >= kWifiWsEndpointRefreshMs);
+
+    if (statusChanged || periodicRefresh) {
+      if (app::espnow::hooks::sendWifiWsEndpointNow(*this, kSlaveLogTag)) {
+        gWifiWsEndpointKnown = true;
+        gWifiWsEndpointConnected = currentConnected;
+        memcpy(gWifiWsEndpointIp, currentIp, sizeof(gWifiWsEndpointIp));
+        gLastWifiWsEndpointSentMs = now;
+      }
+    }
+  }
+
   // While master is linked, keep channel stable to protect TX/ACK timing.
   // Resume scan only after link is lost so reacquisition still works.
   if (masterCount == 0 &&
@@ -150,8 +183,10 @@ bool SlaveNode::sendStateBinary(const void* payload, size_t payloadSize) {
   bool sent = sendToKnownMasters(PacketType::STATE, payload, payloadSize);
 
 #if NODE_STATE_BROADCAST_MIRROR
-  // Mirror state to broadcast as fallback when unicast ACK is unreliable.
-  sent = sendToMaster(kBroadcastMac, scanChannel, PacketType::STATE, payload, payloadSize) || sent;
+  // Mirror to broadcast only as fallback to avoid doubling TX load when unicast already succeeds.
+  if (!sent || masterCount == 0) {
+    sent = sendToMaster(kBroadcastMac, scanChannel, PacketType::STATE, payload, payloadSize) || sent;
+  }
 #endif
 
   return sent;

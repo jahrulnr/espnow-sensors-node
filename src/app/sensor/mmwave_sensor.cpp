@@ -1,6 +1,8 @@
 #include "mmwave_sensor.h"
 
 #include <HardwareSerial.h>
+#include <Preferences.h>
+#include <app_config.h>
 #include <esp_log.h>
 
 namespace app::sensor {
@@ -8,44 +10,31 @@ namespace app::sensor {
 namespace {
 
 static const char* TAG = "mmwave_sensor";
-static constexpr uint32_t FRAME_GAP_MS = 40;
+static constexpr uint8_t FRAME_HEADER[4] = {0xF4, 0xF3, 0xF2, 0xF1};
+static constexpr uint8_t FRAME_TAIL[4] = {0xF8, 0xF7, 0xF6, 0xF5};
+static constexpr uint16_t MIN_PERIODIC_REPORT_PAYLOAD = 13;
+static constexpr uint32_t NO_DATA_LOG_INTERVAL_MS = 5000;
+static constexpr uint32_t FRAME_LOG_INTERVAL_MS = 2000;
+static constexpr uint32_t MALFORMED_LOG_INTERVAL_MS = 3000;
+static constexpr const char* NVS_NAMESPACE = "mmwave_cfg";
+static constexpr const char* NVS_KEY_MAX_CM = "max_cm";
 
 HardwareSerial mmwaveUart(1);
-
-bool containsToken(const String& text, const char* token) {
-  return token != nullptr && text.indexOf(token) >= 0;
-}
-
-bool parseFirstInteger(const String& text, uint16_t& out) {
-  int start = -1;
-  for (int i = 0; i < text.length(); ++i) {
-    if (isDigit(text[i])) {
-      start = i;
-      break;
-    }
-  }
-
-  if (start < 0) {
-    return false;
-  }
-
-  int end = start;
-  while (end < text.length() && isDigit(text[end])) {
-    end++;
-  }
-
-  const long value = text.substring(start, end).toInt();
-  if (value < 0 || value > 65535) {
-    return false;
-  }
-
-  out = static_cast<uint16_t>(value);
-  return true;
-}
 
 }  // namespace
 
 MmwaveSensor mmwaveSensor;
+
+namespace {
+
+uint16_t clampDetectionRange(uint16_t cm) {
+  if (cm > static_cast<uint16_t>(MMWAVE_MAX_ALLOWED_DISTANCE_CM)) {
+    return static_cast<uint16_t>(MMWAVE_MAX_ALLOWED_DISTANCE_CM);
+  }
+  return cm;
+}
+
+}  // namespace
 
 bool MmwaveSensor::begin(uint8_t rxPin, uint8_t txPin, uint32_t baudrate) {
   if (rxPin == 255 || txPin == 255 || baudrate == 0) {
@@ -60,62 +49,160 @@ bool MmwaveSensor::begin(uint8_t rxPin, uint8_t txPin, uint32_t baudrate) {
   mmwaveUart.begin(baud, SERIAL_8N1, rx, tx);
 
   started = true;
-  lineLength = 0;
-  lastByteMs = millis();
-  frameLastByteMs = lastByteMs;
-  frameOpen = false;
+  resetParser();
   detected = false;
   hasDistanceValue = false;
   distanceValueCm = 0;
+  maxDetectionCm = clampDetectionRange(static_cast<uint16_t>(MMWAVE_DEFAULT_MAX_DISTANCE_CM));
+  uint16_t persistedMaxCm = 0;
+  const bool loadedFromNvs = loadSettingsFromNvs(persistedMaxCm);
+  if (loadedFromNvs) {
+    maxDetectionCm = persistedMaxCm;
+  }
+  targetStateValue = 0;
+  reportTypeValue = 0;
   frameCount = 0;
   byteCount = 0;
+  const uint32_t now = millis();
+  lastByteRxMs = now;
+  lastNoDataLogMs = now;
+  lastFrameLogMs = 0;
+  lastMalformedLogMs = 0;
 
   ESP_LOGI(TAG, "mmWave UART ready RX=%u TX=%u baud=%lu", rx, tx, static_cast<unsigned long>(baud));
+  ESP_LOGI(TAG,
+           "mmWave range max=%ucm source=%s",
+           static_cast<unsigned>(maxDetectionCm),
+           loadedFromNvs ? "nvs" : "profile");
   return true;
 }
 
-void MmwaveSensor::onFrameBoundary() {
-  if (!frameOpen) {
+void MmwaveSensor::resetParser() {
+  parseState = ParseState::SyncHeader;
+  headerMatched = 0;
+  lengthIndex = 0;
+  expectedPayloadLength = 0;
+  payloadIndex = 0;
+  tailIndex = 0;
+}
+
+void MmwaveSensor::applyPayload(const uint8_t* payload, uint16_t payloadLength) {
+  if (payload == nullptr || payloadLength < MIN_PERIODIC_REPORT_PAYLOAD) {
     return;
   }
 
-  frameOpen = false;
-  frameCount++;
+  const uint8_t targetState = payload[2];
+  const uint8_t reportType = payload[0];
+  const uint16_t movingDistanceCm = static_cast<uint16_t>(payload[3]) |
+                                    (static_cast<uint16_t>(payload[4]) << 8);
+  const uint16_t stationaryDistanceCm = static_cast<uint16_t>(payload[6]) |
+                                        (static_cast<uint16_t>(payload[7]) << 8);
+  const uint16_t detectionDistanceCm = static_cast<uint16_t>(payload[9]) |
+                                       (static_cast<uint16_t>(payload[10]) << 8);
+
+  detected = (targetState != 0);
+  targetStateValue = targetState;
+  reportTypeValue = reportType;
+
+  if (detectionDistanceCm > 0) {
+    distanceValueCm = detectionDistanceCm;
+    hasDistanceValue = true;
+  } else if (stationaryDistanceCm > 0) {
+    distanceValueCm = stationaryDistanceCm;
+    hasDistanceValue = true;
+  } else if (movingDistanceCm > 0) {
+    distanceValueCm = movingDistanceCm;
+    hasDistanceValue = true;
+  } else {
+    distanceValueCm = 0;
+    hasDistanceValue = false;
+  }
+
+  if (maxDetectionCm > 0 && hasDistanceValue && distanceValueCm > maxDetectionCm) {
+    detected = false;
+    hasDistanceValue = false;
+    distanceValueCm = 0;
+    targetStateValue = 0;
+  }
 }
 
-bool MmwaveSensor::parseLine(const String& line) {
-  String text = line;
-  text.trim();
-  text.toLowerCase();
+bool MmwaveSensor::feedByte(uint8_t byte) {
+  switch (parseState) {
+    case ParseState::SyncHeader: {
+      if (byte == FRAME_HEADER[headerMatched]) {
+        headerMatched++;
+      } else {
+        headerMatched = (byte == FRAME_HEADER[0]) ? 1 : 0;
+      }
 
-  if (text.isEmpty()) {
-    return false;
-  }
+      if (headerMatched == sizeof(FRAME_HEADER)) {
+        parseState = ParseState::ReadLength;
+        lengthIndex = 0;
+      }
+      return false;
+    }
 
-  bool updated = false;
+    case ParseState::ReadLength: {
+      lengthBytes[lengthIndex++] = byte;
+      if (lengthIndex < sizeof(lengthBytes)) {
+        return false;
+      }
 
-  if (containsToken(text, "presence=1") || containsToken(text, "moving") || containsToken(text, "occupied") ||
-      containsToken(text, "detect") || containsToken(text, "target=1") || containsToken(text, "on")) {
-    detected = true;
-    updated = true;
-  }
+      expectedPayloadLength = static_cast<uint16_t>(lengthBytes[0]) |
+                              (static_cast<uint16_t>(lengthBytes[1]) << 8);
+      if (expectedPayloadLength == 0 || expectedPayloadLength > PAYLOAD_BUFFER_SIZE) {
+        const uint32_t now = millis();
+        if ((now - lastMalformedLogMs) >= MALFORMED_LOG_INTERVAL_MS) {
+          ESP_LOGW(TAG,
+                   "Invalid payload length=%u (buffer=%u)",
+                   static_cast<unsigned>(expectedPayloadLength),
+                   static_cast<unsigned>(PAYLOAD_BUFFER_SIZE));
+          lastMalformedLogMs = now;
+        }
+        resetParser();
+        return false;
+      }
 
-  if (containsToken(text, "presence=0") || containsToken(text, "idle") || containsToken(text, "clear") ||
-      containsToken(text, "target=0") || containsToken(text, "off")) {
-    detected = false;
-    updated = true;
-  }
+      payloadIndex = 0;
+      parseState = ParseState::ReadPayload;
+      return false;
+    }
 
-  if (containsToken(text, "dist") || containsToken(text, "range") || containsToken(text, "cm")) {
-    uint16_t parsedDistance = 0;
-    if (parseFirstInteger(text, parsedDistance)) {
-      distanceValueCm = parsedDistance;
-      hasDistanceValue = true;
-      updated = true;
+    case ParseState::ReadPayload: {
+      payloadBuffer[payloadIndex++] = byte;
+      if (payloadIndex >= expectedPayloadLength) {
+        tailIndex = 0;
+        parseState = ParseState::ReadTail;
+      }
+      return false;
+    }
+
+    case ParseState::ReadTail: {
+      if (byte != FRAME_TAIL[tailIndex]) {
+        const uint32_t now = millis();
+        if ((now - lastMalformedLogMs) >= MALFORMED_LOG_INTERVAL_MS) {
+          ESP_LOGW(TAG, "Tail mismatch at index=%u", static_cast<unsigned>(tailIndex));
+          lastMalformedLogMs = now;
+        }
+        resetParser();
+        return false;
+      }
+
+      tailIndex++;
+      if (tailIndex < sizeof(FRAME_TAIL)) {
+        return false;
+      }
+
+      applyPayload(payloadBuffer, expectedPayloadLength);
+      if (frameCount < 65535) {
+        frameCount++;
+      }
+      resetParser();
+      return true;
     }
   }
 
-  return updated;
+  return false;
 }
 
 void MmwaveSensor::poll() {
@@ -123,10 +210,9 @@ void MmwaveSensor::poll() {
     return;
   }
 
-  const uint32_t now = millis();
-  if (frameOpen && (now - frameLastByteMs) > FRAME_GAP_MS) {
-    onFrameBoundary();
-  }
+  const uint32_t pollStartMs = millis();
+  const uint16_t frameBefore = frameCount;
+  const uint16_t bytesBefore = byteCount;
 
   while (mmwaveUart.available() > 0) {
     const int raw = mmwaveUart.read();
@@ -135,32 +221,41 @@ void MmwaveSensor::poll() {
     }
 
     const uint8_t byte = static_cast<uint8_t>(raw);
-    lastByteMs = now;
-    frameLastByteMs = now;
-    frameOpen = true;
 
     if (byteCount < 65535) {
       byteCount++;
     }
 
-    if (byte == '\n' || byte == '\r') {
-      if (lineLength > 0) {
-        lineBuffer[lineLength] = '\0';
-        parseLine(String(lineBuffer));
-        lineLength = 0;
-      }
-      continue;
-    }
+    lastByteRxMs = millis();
 
-    if (isPrintable(byte)) {
-      if (lineLength + 1 < LINE_BUFFER_SIZE) {
-        lineBuffer[lineLength++] = static_cast<char>(byte);
-      } else {
-        lineBuffer[LINE_BUFFER_SIZE - 1] = '\0';
-        parseLine(String(lineBuffer));
-        lineLength = 0;
-      }
-    }
+    feedByte(byte);
+  }
+
+  const bool gotBytes = byteCount != bytesBefore;
+  const bool gotFrame = frameCount != frameBefore;
+
+  if (gotFrame && (pollStartMs - lastFrameLogMs) >= FRAME_LOG_INTERVAL_MS) {
+    ESP_LOGI(TAG,
+             "Frame parsed targetState=%u reportType=%u detected=%u hasDistance=%u distance=%ucm frames=%u bytes=%u",
+             static_cast<unsigned>(targetStateValue),
+             static_cast<unsigned>(reportTypeValue),
+             detected ? 1U : 0U,
+             hasDistanceValue ? 1U : 0U,
+             static_cast<unsigned>(distanceValueCm),
+             static_cast<unsigned>(frameCount),
+             static_cast<unsigned>(byteCount));
+    lastFrameLogMs = pollStartMs;
+  }
+
+  if (!gotBytes && (pollStartMs - lastByteRxMs) >= NO_DATA_LOG_INTERVAL_MS &&
+      (pollStartMs - lastNoDataLogMs) >= NO_DATA_LOG_INTERVAL_MS) {
+    ESP_LOGW(TAG,
+             "No UART bytes from mmWave for %lu ms (RX=%u TX=%u baud=%lu)",
+             static_cast<unsigned long>(pollStartMs - lastByteRxMs),
+             static_cast<unsigned>(rx),
+             static_cast<unsigned>(tx),
+             static_cast<unsigned long>(baud));
+    lastNoDataLogMs = pollStartMs;
   }
 }
 
@@ -170,14 +265,11 @@ bool MmwaveSensor::snapshot(MmwaveReading& out, bool resetCounters) {
     return false;
   }
 
-  const uint32_t now = millis();
-  if (frameOpen && (now - frameLastByteMs) > FRAME_GAP_MS) {
-    onFrameBoundary();
-  }
-
   out.targetDetected = detected;
   out.hasDistance = hasDistanceValue;
   out.distanceCm = distanceValueCm;
+  out.targetState = targetStateValue;
+  out.reportType = reportTypeValue;
   out.frames = frameCount;
   out.bytes = byteCount;
 
@@ -187,6 +279,56 @@ bool MmwaveSensor::snapshot(MmwaveReading& out, bool resetCounters) {
   }
 
   return true;
+}
+
+bool MmwaveSensor::setMaxDetectionRangeCm(uint16_t maxDistanceCmInput, bool persistToNvs) {
+  const uint16_t nextMaxCm = clampDetectionRange(maxDistanceCmInput);
+  maxDetectionCm = nextMaxCm;
+
+  bool persisted = true;
+  if (persistToNvs) {
+    persisted = storeSettingsToNvs(nextMaxCm);
+  }
+
+  ESP_LOGI(TAG,
+           "mmWave range updated max=%ucm persist=%u stored=%u",
+           static_cast<unsigned>(nextMaxCm),
+           persistToNvs ? 1U : 0U,
+           persisted ? 1U : 0U);
+
+  return persisted;
+}
+
+uint16_t MmwaveSensor::maxDetectionRangeCm() const {
+  return maxDetectionCm;
+}
+
+bool MmwaveSensor::loadSettingsFromNvs(uint16_t& outMaxDistanceCm) const {
+  Preferences prefs;
+  if (!prefs.begin(NVS_NAMESPACE, false)) {
+    return false;
+  }
+
+  if (!prefs.isKey(NVS_KEY_MAX_CM)) {
+    prefs.end();
+    return false;
+  }
+
+  outMaxDistanceCm = clampDetectionRange(prefs.getUShort(NVS_KEY_MAX_CM, 0));
+  prefs.end();
+  return true;
+}
+
+bool MmwaveSensor::storeSettingsToNvs(uint16_t maxDistanceCmInput) const {
+  Preferences prefs;
+  if (!prefs.begin(NVS_NAMESPACE, false)) {
+    return false;
+  }
+
+  const uint16_t maxDistanceCm = clampDetectionRange(maxDistanceCmInput);
+  const bool ok = prefs.putUShort(NVS_KEY_MAX_CM, maxDistanceCm) == maxDistanceCm;
+  prefs.end();
+  return ok;
 }
 
 }  // namespace app::sensor

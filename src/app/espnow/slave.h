@@ -31,6 +31,7 @@ class SlaveNode {
     uint8_t mac[6] = {0};
     uint8_t channel = DEFAULT_CHANNEL;
     uint32_t lastSeenMs = 0;
+    uint8_t txFailStreak = 0;
   };
 
   static void onSendStatic(const esp_now_send_info_t* tx_info, esp_now_send_status_t status);

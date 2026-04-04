@@ -22,6 +22,8 @@ struct MmwaveSampleData {
   bool detected = false;
   bool hasDistance = false;
   uint16_t distanceCm = 0;
+  uint8_t targetState = 0;
+  uint8_t reportType = 0;
   uint16_t frameCount = 0;
   uint16_t byteCount = 0;
 };

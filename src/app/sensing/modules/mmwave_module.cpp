@@ -19,6 +19,8 @@ void fillSampleFromReading(const app::sensor::MmwaveReading& reading, SensorSamp
   out.mmwave.detected = reading.targetDetected;
   out.mmwave.hasDistance = reading.hasDistance;
   out.mmwave.distanceCm = reading.distanceCm;
+  out.mmwave.targetState = reading.targetState;
+  out.mmwave.reportType = reading.reportType;
   out.mmwave.frameCount = reading.frames;
   out.mmwave.byteCount = reading.bytes;
 }

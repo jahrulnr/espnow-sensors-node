@@ -25,6 +25,10 @@ enum class Type : uint8_t {
   ModuleListReq = 15,
   ModuleInfo = 16,
   CameraCapture = 17,
+  WifiKeyExchange = 18,
+  WifiCredentialsSecure = 19,
+  MmwaveRangeConfig = 20,
+  WifiWsEndpoint = 21,
 };
 
 enum class ModuleDomain : uint8_t {
@@ -99,6 +103,8 @@ struct __attribute__((packed)) MmwaveState {
   uint16_t distanceCm;
   uint16_t frameCount;
   uint16_t byteCount;
+  uint8_t targetState;
+  uint8_t reportType;
 };
 
 static constexpr size_t kProxyChunkDataBytes = 160;
@@ -165,6 +171,50 @@ struct __attribute__((packed)) CameraCaptureState {
   uint16_t latencyMs;
   uint8_t frameFormat;
   uint8_t cameraType;
+};
+
+static constexpr uint8_t kWifiKeyCurveSecp256r1 = 1;
+static constexpr size_t kWifiKeyExchangePublicKeyBytes = 33;
+static constexpr size_t kWifiCredentialsNonceBytes = 12;
+static constexpr size_t kWifiCredentialsCiphertextBytes = 98;
+static constexpr size_t kWifiCredentialsTagBytes = 16;
+
+struct __attribute__((packed)) WifiKeyExchangeState {
+  Header header;
+  uint32_t keyId;
+  uint8_t curve;
+  uint8_t publicKeySize;
+  uint8_t publicKey[kWifiKeyExchangePublicKeyBytes];
+};
+
+struct __attribute__((packed)) WifiCredentialsSecureCommand {
+  Header header;
+  uint32_t keyId;
+  uint32_t counter;
+  uint8_t ephemeralKeySize;
+  uint8_t ephemeralPublicKey[kWifiKeyExchangePublicKeyBytes];
+  uint8_t nonce[kWifiCredentialsNonceBytes];
+  uint8_t ciphertext[kWifiCredentialsCiphertextBytes];
+  uint8_t tag[kWifiCredentialsTagBytes];
+};
+
+struct __attribute__((packed)) MmwaveRangeConfigCommand {
+  Header header;
+  uint16_t maxDistanceCm;
+  uint8_t persistToNvs;
+  uint8_t reserved0;
+};
+
+static constexpr size_t kWifiWsPathBytes = 24;
+static constexpr size_t kWifiWsHostnameBytes = 32;
+
+struct __attribute__((packed)) WifiWsEndpointState {
+  Header header;
+  uint8_t connected;
+  uint8_t ip[4];
+  uint16_t port;
+  char path[kWifiWsPathBytes];
+  char hostname[kWifiWsHostnameBytes];
 };
 
 inline void initHeader(Header& header, Type type) {
