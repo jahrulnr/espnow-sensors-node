@@ -97,6 +97,11 @@ Validasi minimum di master:
 - `14 = ServoAck` (STATE payload)
 - `15 = ModuleListReq` (COMMAND payload)
 - `16 = ModuleInfo` (STATE payload)
+- `17 = CameraCapture` (STATE payload)
+- `18 = WifiKeyExchange` (STATE payload)
+- `19 = WifiCredentialsSecure` (COMMAND payload)
+- `20 = MmwaveRangeConfig` (COMMAND payload)
+- `21 = WifiWsEndpoint` (STATE payload)
 
 ## Payload Structures Dan Semantik
 
@@ -173,7 +178,12 @@ struct MmwaveState {
   uint16_t distanceCm;
   uint16_t frameCount;
   uint16_t byteCount;
+  uint8_t targetState; // ekstensi opsional, 0=none,1=moving,2=stationary,3=both
+  uint8_t reportType;  // ekstensi opsional dari periodic report LD2410
 };
+
+`targetState` dan `reportType` adalah field ekstensi forward-compatible.
+Master lama bisa mengabaikan field ini dan tetap mem-parse field dasar (`detected/hasDistance/distanceCm/frameCount/byteCount`).
 
 ### ServoAck (`Type=14`)
 
@@ -189,7 +199,23 @@ struct ServoAckState {
   uint32_t timestampMs;
 };
 ```
+
+### WifiKeyExchange (`Type=18`)
+
+```c
+struct WifiKeyExchangeState {
+  Header header;
+  uint32_t keyId;
+  uint8_t curve;            // saat ini 1 = secp256r1
+  uint8_t publicKeySize;    // saat ini 33
+  uint8_t publicKey[33];    // compressed EC public key
+};
 ```
+
+Panduan parsing di master:
+- Treat nilai `curve` yang unknown sebagai unsupported/forward-compatible dan lewati secure provisioning.
+- Wajibkan `publicKeySize == 33` sebelum key dipakai untuk enkripsi kredensial aman.
+- `keyId` mengidentifikasi material key aktif node dan ikut mengikat anti-replay.
 
 ## COMMAND Contract
 
@@ -206,8 +232,9 @@ struct IdentityReqCommand {
 Respons node:
 1. kirim `IdentityState`
 2. kirim `FeaturesState`
+3. kirim `WifiKeyExchangeState` saat material key secure channel tersedia
 
-Command selain `IdentityReq`, `WifiCredentials`, `ServoControl`, dan `ModuleListReq` saat ini diabaikan.
+Command selain `IdentityReq`, `WifiCredentials`, `WifiCredentialsSecure`, `MmwaveRangeConfig`, `ServoControl`, dan `ModuleListReq` saat ini diabaikan.
 
 ### WifiCredentials (`Type=12`)
 
@@ -228,6 +255,64 @@ Perilaku node:
 Catatan encoding field:
 - `ssid`/`password` boleh null-terminated atau buffer terisi parsial.
 - Node akan memotong panjang ke kapasitas field (`32`/`64`) bila lebih panjang.
+
+### WifiCredentialsSecure (`Type=19`)
+
+```c
+struct WifiCredentialsSecureCommand {
+  Header header;
+  uint32_t keyId;
+  uint32_t counter;
+  uint8_t ephemeralKeySize;     // saat ini 33
+  uint8_t ephemeralPublicKey[33];
+  uint8_t nonce[12];
+  uint8_t ciphertext[98];
+  uint8_t tag[16];
+};
+```
+
+Perilaku node:
+- Validasi `keyId` terhadap identifier keypair lokal yang aktif.
+- Validasi `counter` harus naik ketat (anti-replay).
+- Derivasi session key via ECDH shared secret + SHA-256 KDF input (`shared`, `keyId`, `counter`, label `fh-wifi-v1`).
+- Dekripsi plaintext kredensial fixed-size dengan AES-GCM (AAD mengikat type/keyId/counter).
+- Jika dekripsi + validasi sukses: queue request connect WiFi menggunakan SSID/password hasil dekripsi.
+- Jika validasi/dekripsi gagal: command ditolak aman dan tidak ada connect request yang di-queue.
+
+### MmwaveRangeConfig (`Type=20`)
+
+```c
+struct MmwaveRangeConfigCommand {
+  Header header;
+  uint16_t maxDistanceCm; // 0 menonaktifkan batas jarak, selain itu batas maksimum cm
+  uint8_t persistToNvs;   // 0/1
+  uint8_t reserved0;
+};
+```
+
+Perilaku node:
+- Menerapkan filter jarak maksimum mmWave pada pemrosesan sample runtime.
+- Jika `maxDistanceCm == 0`, batas jangkauan dinonaktifkan.
+- Jika `persistToNvs == 1`, nilai yang diterapkan disimpan ke NVS dan dipakai ulang saat boot berikutnya.
+- Jika `persistToNvs == 0`, nilai hanya berlaku saat runtime dan default profile/NVS sebelumnya tidak diubah.
+
+### WifiWsEndpoint (`Type=21`)
+
+```c
+struct WifiWsEndpointState {
+  Header header;
+  uint8_t connected;  // 0/1
+  uint8_t ip[4];      // byte IPv4, 0.0.0.0 saat disconnected
+  uint16_t port;      // port websocket (default 81)
+  char path[24];      // path websocket (default "/")
+  char hostname[32];  // hostname aktif (fallback mdns)
+};
+```
+
+Perilaku node:
+- Mengirim state ini pada alur respons `IdentityReq`.
+- Mengirim ulang state ini saat endpoint WiFi berubah (connect/disconnect/perubahan IP).
+- Mengirim refresh periodik saat connected agar master/FE bisa memulihkan endpoint setelah gangguan link sementara.
 
 ### ServoControl (`Type=13`)
 
@@ -282,11 +367,13 @@ Panduan parsing di master:
 
 Urutan umum setelah node linked:
 1. Node kirim `IdentityState` dan `FeaturesState`.
-2. Node kirim sample sensor (`SensorState`, `MmwaveState`) sesuai interval/module.
-3. Master bisa kirim `IdentityReq` kapan pun untuk re-sync metadata node.
-4. Master bisa kirim `ServoControl` dan menerima `ServoAck` sebagai respons runtime state.
-5. Master bisa kirim `ModuleListReq` untuk discovery module tersedia via ESP-NOW.
-6. Master kirim `HEARTBEAT` periodik untuk menjaga link.
+2. Node kirim `WifiKeyExchangeState` (saat secure channel siap).
+3. Node kirim sample sensor (`SensorState`, `MmwaveState`) sesuai interval/module.
+4. Master bisa kirim `IdentityReq` kapan pun untuk re-sync metadata node (termasuk secure key exchange state).
+5. Master bisa kirim `WifiCredentialsSecure` (disarankan) atau `WifiCredentials` (kompatibilitas) untuk meminta node connect WiFi.
+6. Master bisa kirim `ServoControl` dan menerima `ServoAck` sebagai respons runtime state.
+7. Master bisa kirim `ModuleListReq` untuk discovery module tersedia via ESP-NOW.
+8. Master kirim `HEARTBEAT` periodik untuk menjaga link.
 
 Pada mode powersave:
 - Tiap wake cycle node menunggu link sampai timeout.
@@ -303,7 +390,6 @@ Pada mode powersave:
    - validasi magic/version/type/size
    - decode sesuai tabel struct di atas
 5. Type tidak dikenal atau feature bit tidak dikenal: abaikan, jangan crash.
-5. Unknown type/unknown feature bit: ignore, jangan crash.
 
 ## Sumber Kontrak Di Kode
 

@@ -90,6 +90,13 @@ mmWave filtering (enabled by default):
 - `MMWAVE_PRESENCE_OFF_HOLD_MS`
 - `MMWAVE_DISTANCE_MEDIAN_WINDOW`
 
+Default mmWave tuning (ESP32-C3 profile baseline):
+- `MMWAVE_READ_INTERVAL_MS=500`
+- `MMWAVE_PRESENCE_ON_CONSECUTIVE=1`
+- `MMWAVE_PRESENCE_OFF_CONSECUTIVE=2`
+- `MMWAVE_PRESENCE_OFF_HOLD_MS=1500`
+- `MMWAVE_DISTANCE_MEDIAN_WINDOW=3`
+
 Battery analog filtering:
 - `BATTERY_FILTER_ENABLED`
 - `BATTERY_ADC_SAMPLES`
@@ -122,6 +129,7 @@ WiFi STA support for advanced use cases (logging/dashboard/camera) is controlled
 WebSocket gateway settings:
 - `ENABLE_WEBSOCKET_GATEWAY` (default `1`, active only when WiFi mode is enabled and connected)
 - `WEBSOCKET_SERVER_PORT` (default `81`)
+- `WEBSOCKET_SERVER_PATH` (default `"/"`)
 - `WEBSOCKET_MAX_HOOKS` (default `8`)
 - `WEBSOCKET_CAMERA_DEFAULT_WIDTH` (default `320`)
 - `WEBSOCKET_CAMERA_DEFAULT_HEIGHT` (default `240`)

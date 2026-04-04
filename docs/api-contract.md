@@ -97,6 +97,11 @@ Minimum master validation:
 - `14 = ServoAck` (STATE payload)
 - `15 = ModuleListReq` (COMMAND payload)
 - `16 = ModuleInfo` (STATE payload)
+- `17 = CameraCapture` (STATE payload)
+- `18 = WifiKeyExchange` (STATE payload)
+- `19 = WifiCredentialsSecure` (COMMAND payload)
+- `20 = MmwaveRangeConfig` (COMMAND payload)
+- `21 = WifiWsEndpoint` (STATE payload)
 
 ## Payload Structures and Semantics
 
@@ -173,7 +178,12 @@ struct MmwaveState {
   uint16_t distanceCm;
   uint16_t frameCount;
   uint16_t byteCount;
+  uint8_t targetState; // optional ext, 0=none,1=moving,2=stationary,3=both
+  uint8_t reportType;  // optional ext from LD2410 periodic report
 };
+
+`targetState` and `reportType` are optional forward-compatible extension fields.
+Older masters can ignore them and still parse base fields (`detected/hasDistance/distanceCm/frameCount/byteCount`).
 
 ### ServoAck (`Type=14`)
 
@@ -189,7 +199,23 @@ struct ServoAckState {
   uint32_t timestampMs;
 };
 ```
+
+### WifiKeyExchange (`Type=18`)
+
+```c
+struct WifiKeyExchangeState {
+  Header header;
+  uint32_t keyId;
+  uint8_t curve;            // currently 1 = secp256r1
+  uint8_t publicKeySize;    // currently 33
+  uint8_t publicKey[33];    // compressed EC public key
+};
 ```
+
+Master parsing guidance:
+- Treat unknown `curve` values as unsupported/forward-compatible and skip secure provisioning.
+- Require `publicKeySize == 33` before using the key for secure credential encryption.
+- `keyId` identifies the active node key material and is part of anti-replay binding.
 
 ## COMMAND Contract
 
@@ -206,8 +232,9 @@ struct IdentityReqCommand {
 Node response:
 1. sends `IdentityState`
 2. sends `FeaturesState`
+3. sends `WifiKeyExchangeState` when secure channel key material is available
 
-Commands other than `IdentityReq`, `WifiCredentials`, `ServoControl`, and `ModuleListReq` are currently ignored.
+Commands other than `IdentityReq`, `WifiCredentials`, `WifiCredentialsSecure`, `MmwaveRangeConfig`, `ServoControl`, and `ModuleListReq` are currently ignored.
 
 ### WifiCredentials (`Type=12`)
 
@@ -228,6 +255,64 @@ Node behavior:
 Field encoding notes:
 - `ssid`/`password` may be null-terminated or partially filled buffers.
 - Node truncates length to field capacities (`32`/`64`) when longer.
+
+### WifiCredentialsSecure (`Type=19`)
+
+```c
+struct WifiCredentialsSecureCommand {
+  Header header;
+  uint32_t keyId;
+  uint32_t counter;
+  uint8_t ephemeralKeySize;     // currently 33
+  uint8_t ephemeralPublicKey[33];
+  uint8_t nonce[12];
+  uint8_t ciphertext[98];
+  uint8_t tag[16];
+};
+```
+
+Node behavior:
+- Validates `keyId` against current local keypair identifier.
+- Validates `counter` is strictly increasing (anti-replay).
+- Derives session key via ECDH shared secret + SHA-256 KDF inputs (`shared`, `keyId`, `counter`, label `fh-wifi-v1`).
+- Decrypts fixed-size plaintext credentials using AES-GCM (AAD binds type/keyId/counter).
+- If decrypt and validation pass: queues WiFi connect request using recovered SSID/password.
+- If validation/decrypt fails: command is rejected safely and no connect is queued.
+
+### MmwaveRangeConfig (`Type=20`)
+
+```c
+struct MmwaveRangeConfigCommand {
+  Header header;
+  uint16_t maxDistanceCm; // 0 disables range limit, otherwise max allowed distance in cm
+  uint8_t persistToNvs;   // 0/1
+  uint8_t reserved0;
+};
+```
+
+Node behavior:
+- Applies mmWave max-distance filter in runtime sample processing.
+- If `maxDistanceCm == 0`, range limit is disabled.
+- If `persistToNvs == 1`, applied value is stored in NVS and reused on next boot.
+- If `persistToNvs == 0`, value is runtime-only and default profile/NVS value remains unchanged.
+
+### WifiWsEndpoint (`Type=21`)
+
+```c
+struct WifiWsEndpointState {
+  Header header;
+  uint8_t connected;  // 0/1
+  uint8_t ip[4];      // IPv4 bytes, 0.0.0.0 when disconnected
+  uint16_t port;      // websocket port (default 81)
+  char path[24];      // websocket path (default "/")
+  char hostname[32];  // active hostname (for mdns fallback)
+};
+```
+
+Node behavior:
+- Sends this state on `IdentityReq` response flow.
+- Sends this state again when WiFi endpoint changes (connect/disconnect/IP change).
+- Sends periodic refresh while connected so master/FE can recover endpoint after transient link loss.
 
 ### ServoControl (`Type=13`)
 
@@ -282,11 +367,13 @@ Master parsing guidance:
 
 Typical order after node is linked:
 1. Node sends `IdentityState` and `FeaturesState`.
-2. Node sends sensor samples (`SensorState`, `MmwaveState`) according to interval/module.
-3. Master can send `IdentityReq` anytime to re-sync node metadata.
-4. Master can send `ServoControl` and receive `ServoAck` runtime state response.
-5. Master can send `ModuleListReq` to discover available modules via ESP-NOW.
-6. Master sends periodic `HEARTBEAT` to keep link alive.
+2. Node sends `WifiKeyExchangeState` (when secure channel is ready).
+3. Node sends sensor samples (`SensorState`, `MmwaveState`) according to interval/module.
+4. Master can send `IdentityReq` anytime to re-sync node metadata (including secure key exchange state).
+5. Master can send `WifiCredentialsSecure` (preferred) or `WifiCredentials` (compatibility) to request node WiFi connect.
+6. Master can send `ServoControl` and receive `ServoAck` runtime state response.
+7. Master can send `ModuleListReq` to discover available modules via ESP-NOW.
+8. Master sends periodic `HEARTBEAT` to keep link alive.
 
 In powersave mode:
 - Every wake cycle, node waits for link until timeout.

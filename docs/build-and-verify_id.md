@@ -82,6 +82,33 @@ Expected:
 - Saat sukses, log menampilkan hostname dan endpoint mDNS `<hostname>.local`.
 - Jika tidak ada command kredensial dari master, node tidak connect WiFi.
 
+## Validasi Secure WiFi Provisioning (Opsional)
+
+Prasyarat:
+- Build dengan `ENABLE_WIFI_MODE=1`.
+- Master mendukung `WifiKeyExchange` (`Type=18`) dan `WifiCredentialsSecure` (`Type=19`).
+
+Expected discovery behavior:
+- Setelah master mengirim `IdentityReq`, node mengirim `IdentityState`, `FeaturesState`, dan `WifiKeyExchange`.
+- `WifiKeyExchange.publicKeySize` harus `33` dan `curve` harus `1` (secp256r1).
+
+Expected secure command behavior:
+- Saat menerima `Type=19` yang valid, node mendekripsi kredensial lalu queue request connect WiFi.
+- Saat payload `Type=19` yang sama di-replay (`counter` tidak berubah), node menolak command (anti-replay) dan tidak queue connect.
+- Saat `keyId` tidak cocok dengan state key lokal, node menolak command dengan aman.
+
+## Validasi Override Jangkauan mmWave (Opsional)
+
+Prasyarat:
+- Module mmWave aktif dan mengirim report valid.
+- Master dapat mengirim `PacketType::COMMAND` dengan `Type=MmwaveRangeConfig (20)`.
+
+Expected:
+- Payload command dengan `maxDistanceCm` dan `persistToNvs` diterima oleh command hook node.
+- Jika `maxDistanceCm` lebih kecil dari jarak target saat ini, output node harus ter-clamp menjadi no-detection (`targetState=0`, `detected=0`).
+- Jika `persistToNvs=1`, range yang dikonfigurasi tetap aktif setelah reboot.
+- Jika `persistToNvs=0`, override runtime tidak menimpa setting persisted/default.
+
 ## Validasi WebSocket (Opsional)
 
 Prasyarat:

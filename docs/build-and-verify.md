@@ -82,6 +82,33 @@ Expected:
 - On success, logs show hostname and mDNS endpoint `<hostname>.local`.
 - If no credentials command is sent by master, node does not connect WiFi.
 
+## Secure WiFi Provisioning Validation (Optional)
+
+Prerequisites:
+- Build with `ENABLE_WIFI_MODE=1`.
+- Master supports `WifiKeyExchange` (`Type=18`) and `WifiCredentialsSecure` (`Type=19`).
+
+Expected discovery behavior:
+- After master sends `IdentityReq`, node sends `IdentityState`, `FeaturesState`, and `WifiKeyExchange`.
+- `WifiKeyExchange.publicKeySize` should be `33` and `curve` should be `1` (secp256r1).
+
+Expected secure command behavior:
+- When receiving valid `Type=19`, node decrypts credentials and queues WiFi connect request.
+- When replaying the same `Type=19` payload (`counter` unchanged), node rejects command (anti-replay) and does not queue connect.
+- When `keyId` does not match local key state, node rejects command safely.
+
+## mmWave Range Override Validation (Optional)
+
+Prerequisites:
+- mmWave module is enabled and streaming valid reports.
+- Master can send `PacketType::COMMAND` with `Type=MmwaveRangeConfig (20)`.
+
+Expected:
+- Command payload with `maxDistanceCm` and `persistToNvs` is accepted by node command hook.
+- If `maxDistanceCm` is smaller than live target distance, node output should clamp to no-detection (`targetState=0`, `detected=0`).
+- If `persistToNvs=1`, configured range should remain active after reboot.
+- If `persistToNvs=0`, runtime override should not overwrite persisted/default setting.
+
 ## WebSocket Validation (Optional)
 
 Prerequisites:
